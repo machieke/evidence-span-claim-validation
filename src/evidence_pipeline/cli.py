@@ -15,6 +15,7 @@ from evidence_pipeline.ids import sha256_file, stable_id
 from evidence_pipeline.jsonl import JSONLDecodeError, append_jsonl, find_record, read_jsonl
 from evidence_pipeline.schemas import SCHEMA_REGISTRY, EvidenceRecord, SourceModality, SourceRecord
 from evidence_pipeline.spans.rule_highlighter import detect_chat_spans
+from evidence_pipeline.validation.deterministic import validate_raw_claims
 
 app = typer.Typer(help="Evidence-span claim validation pipeline.")
 
@@ -171,6 +172,22 @@ def detect_chat_spans_command(
     _init_paths(config)
     result = detect_chat_spans(config, source_id=source_id)
     typer.echo(f"spans_created={result.created} spans_skipped={result.skipped}")
+
+
+@app.command("validate-claims")
+def validate_claims_command(
+    source_id: Optional[str] = typer.Option(None, "--source-id", help="Only validate claims for this source."),
+    claim_id: Optional[List[str]] = typer.Option(None, "--claim-id", help="Only validate the selected claim ID. Repeatable."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Run deterministic validation over claims.raw.jsonl."""
+    config = load_config(config_path)
+    _init_paths(config)
+    result = validate_raw_claims(config, source_id=source_id, claim_ids=claim_id)
+    typer.echo(
+        f"claims_accepted={result.accepted} claims_quarantined={result.quarantined} "
+        f"claims_skipped={result.skipped}"
+    )
 
 
 @app.command("validate-jsonl")
