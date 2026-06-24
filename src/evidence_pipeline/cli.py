@@ -7,10 +7,14 @@ from typing import List, Optional
 import typer
 from pydantic import ValidationError
 
+from evidence_pipeline.chunking.chat_chunker import chunk_chat
 from evidence_pipeline.config import PipelineConfig, load_config
+from evidence_pipeline.ingest.chat import ingest_chat_export
+from evidence_pipeline.ingest.chat_evidence import build_chat_evidence
 from evidence_pipeline.ids import sha256_file, stable_id
 from evidence_pipeline.jsonl import JSONLDecodeError, append_jsonl, find_record, read_jsonl
 from evidence_pipeline.schemas import SCHEMA_REGISTRY, EvidenceRecord, SourceModality, SourceRecord
+from evidence_pipeline.spans.rule_highlighter import detect_chat_spans
 
 app = typer.Typer(help="Evidence-span claim validation pipeline.")
 
@@ -110,6 +114,65 @@ def register_source(
     typer.echo(source_id)
 
 
+@app.command("ingest-chat")
+def ingest_chat(
+    chat_export: Path = typer.Argument(..., help="Chat export JSON file."),
+    metadata: Optional[List[str]] = typer.Option(None, "--metadata", "-m", help="Metadata as KEY=VALUE."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Ingest a JSON chat export into sources.jsonl and chat_messages.jsonl."""
+    config = load_config(config_path)
+    _init_paths(config)
+    if not chat_export.exists() or not chat_export.is_file():
+        raise typer.BadParameter(f"chat export does not exist: {chat_export}")
+    try:
+        result = ingest_chat_export(chat_export, config, metadata=_parse_metadata(metadata))
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc))
+    typer.echo(
+        f"source_id={result.source_id} source_created={result.source_created} "
+        f"messages_created={result.messages_created} messages_skipped={result.messages_skipped}"
+    )
+
+
+@app.command("build-chat-evidence")
+def build_chat_evidence_command(
+    source_id: Optional[str] = typer.Option(None, "--source-id", help="Only build evidence for this source."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Create chat message_span evidence records from chat_messages.jsonl."""
+    config = load_config(config_path)
+    _init_paths(config)
+    result = build_chat_evidence(config, source_id=source_id)
+    typer.echo(f"evidence_created={result.created} evidence_skipped={result.skipped}")
+
+
+@app.command("chunk-chat")
+def chunk_chat_command(
+    source_id: Optional[str] = typer.Option(None, "--source-id", help="Only chunk this source."),
+    previous_messages: int = typer.Option(2, "--previous-messages", min=0, help="Previous messages to include as context."),
+    max_tokens: int = typer.Option(1200, "--max-tokens", min=1, help="Policy metadata token budget."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Build thread-aware chat context chunks."""
+    config = load_config(config_path)
+    _init_paths(config)
+    result = chunk_chat(config, source_id=source_id, previous_messages=previous_messages, max_tokens=max_tokens)
+    typer.echo(f"chunks_created={result.created} chunks_skipped={result.skipped}")
+
+
+@app.command("detect-chat-spans")
+def detect_chat_spans_command(
+    source_id: Optional[str] = typer.Option(None, "--source-id", help="Only detect spans for this source."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Detect claim-bearing spans in primary chat evidence."""
+    config = load_config(config_path)
+    _init_paths(config)
+    result = detect_chat_spans(config, source_id=source_id)
+    typer.echo(f"spans_created={result.created} spans_skipped={result.skipped}")
+
+
 @app.command("validate-jsonl")
 def validate_jsonl(
     path: Path = typer.Argument(..., help="JSONL file to validate."),
@@ -146,6 +209,7 @@ def validate_artifacts(
     config = load_config(config_path)
     schema_by_key = {
         "sources": "source",
+        "chat_messages": "chat_message",
         "evidence": "evidence",
         "chunks": "chunk",
         "spans": "span",

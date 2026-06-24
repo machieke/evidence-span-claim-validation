@@ -1,4 +1,5 @@
 from evidence_pipeline.schemas.base import SourceModality
+from evidence_pipeline.schemas.chat import ChatMessageRecord
 from evidence_pipeline.schemas.chunks import ChunkRecord
 from evidence_pipeline.schemas.claims import NormalizedClaimRecord, RawClaimRecord, ValidatedClaimRecord
 from evidence_pipeline.schemas.evidence import EvidenceRecord
@@ -9,6 +10,9 @@ from evidence_pipeline.schemas.validation import ErrorRecord, QuarantineRecord, 
 SCHEMA_REGISTRY = {
     "source": SourceRecord,
     "sources": SourceRecord,
+    "chat_message": ChatMessageRecord,
+    "chat-message": ChatMessageRecord,
+    "chat_messages": ChatMessageRecord,
     "evidence": EvidenceRecord,
     "chunk": ChunkRecord,
     "chunks": ChunkRecord,
@@ -32,6 +36,7 @@ SCHEMA_REGISTRY = {
 
 __all__ = [
     "ChunkRecord",
+    "ChatMessageRecord",
     "ErrorRecord",
     "EvidenceRecord",
     "NormalizedClaimRecord",

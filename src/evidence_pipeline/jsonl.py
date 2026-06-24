@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, Optional, Tuple, Type
+from typing import Any, Dict, Iterable, Iterator, Optional, Set, Tuple, Type
 
 from pydantic import BaseModel, ValidationError
 
@@ -71,3 +71,7 @@ def find_record(path: Path, key: str, value: Any) -> Optional[Dict[str, Any]]:
         if payload.get(key) == value:
             return payload
     return None
+
+
+def existing_values(path: Path, key: str) -> Set[Any]:
+    return {payload[key] for _, payload in read_jsonl(path) if key in payload}

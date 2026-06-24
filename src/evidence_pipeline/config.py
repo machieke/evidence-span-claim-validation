@@ -17,6 +17,7 @@ class PathConfig(BaseModel):
 
 class JSONLConfig(BaseModel):
     sources: str = "sources.jsonl"
+    chat_messages: str = "chat_messages.jsonl"
     evidence: str = "evidence.jsonl"
     chunks: str = "chunks.jsonl"
     spans: str = "spans.jsonl"
