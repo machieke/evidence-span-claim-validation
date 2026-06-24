@@ -8,6 +8,7 @@ paths:
 jsonl:
   sources: sources.jsonl
   chat_messages: chat_messages.jsonl
+  pdf_blocks: pdf_blocks.jsonl
   evidence: evidence.jsonl
   chunks: chunks.jsonl
   spans: spans.jsonl

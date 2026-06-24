@@ -29,6 +29,17 @@ PYTHONPATH=src python3 -m evidence_pipeline validate-claims
 PYTHONPATH=src python3 -m evidence_pipeline validate-artifacts
 ```
 
+PDF pipeline:
+
+```bash
+PYTHONPATH=src python3 -m evidence_pipeline ingest-pdf data/raw/pdf/report.pdf
+PYTHONPATH=src python3 -m evidence_pipeline build-pdf-evidence
+PYTHONPATH=src python3 -m evidence_pipeline chunk-pdf
+PYTHONPATH=src python3 -m evidence_pipeline detect-pdf-spans
+PYTHONPATH=src python3 -m evidence_pipeline validate-claims
+PYTHONPATH=src python3 -m evidence_pipeline validate-artifacts
+```
+
 During local development:
 
 ```bash

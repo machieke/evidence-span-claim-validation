@@ -8,13 +8,16 @@ import typer
 from pydantic import ValidationError
 
 from evidence_pipeline.chunking.chat_chunker import chunk_chat
+from evidence_pipeline.chunking.pdf_chunker import chunk_pdf
 from evidence_pipeline.config import PipelineConfig, load_config
 from evidence_pipeline.ingest.chat import ingest_chat_export
 from evidence_pipeline.ingest.chat_evidence import build_chat_evidence
+from evidence_pipeline.ingest.pdf import ingest_pdf
+from evidence_pipeline.ingest.pdf_evidence import build_pdf_evidence
 from evidence_pipeline.ids import sha256_file, stable_id
 from evidence_pipeline.jsonl import JSONLDecodeError, append_jsonl, find_record, read_jsonl
 from evidence_pipeline.schemas import SCHEMA_REGISTRY, EvidenceRecord, SourceModality, SourceRecord
-from evidence_pipeline.spans.rule_highlighter import detect_chat_spans
+from evidence_pipeline.spans.rule_highlighter import detect_chat_spans, detect_pdf_spans
 from evidence_pipeline.validation.deterministic import validate_raw_claims
 
 app = typer.Typer(help="Evidence-span claim validation pipeline.")
@@ -174,6 +177,66 @@ def detect_chat_spans_command(
     typer.echo(f"spans_created={result.created} spans_skipped={result.skipped}")
 
 
+@app.command("ingest-pdf")
+def ingest_pdf_command(
+    pdf_file: Path = typer.Argument(..., help="PDF file to ingest."),
+    metadata: Optional[List[str]] = typer.Option(None, "--metadata", "-m", help="Metadata as KEY=VALUE."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Ingest a PDF into sources.jsonl and pdf_blocks.jsonl."""
+    config = load_config(config_path)
+    _init_paths(config)
+    if not pdf_file.exists() or not pdf_file.is_file():
+        raise typer.BadParameter(f"PDF file does not exist: {pdf_file}")
+    try:
+        result = ingest_pdf(pdf_file, config, metadata=_parse_metadata(metadata))
+    except RuntimeError as exc:
+        raise typer.BadParameter(str(exc))
+    typer.echo(
+        f"source_id={result.source_id} source_created={result.source_created} "
+        f"blocks_created={result.blocks_created} blocks_skipped={result.blocks_skipped} "
+        f"extractor={result.extractor}"
+    )
+
+
+@app.command("build-pdf-evidence")
+def build_pdf_evidence_command(
+    source_id: Optional[str] = typer.Option(None, "--source-id", help="Only build evidence for this source."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Create PDF text_span evidence records from pdf_blocks.jsonl."""
+    config = load_config(config_path)
+    _init_paths(config)
+    result = build_pdf_evidence(config, source_id=source_id)
+    typer.echo(f"evidence_created={result.created} evidence_skipped={result.skipped}")
+
+
+@app.command("chunk-pdf")
+def chunk_pdf_command(
+    source_id: Optional[str] = typer.Option(None, "--source-id", help="Only chunk this source."),
+    target_tokens: int = typer.Option(1200, "--target-tokens", min=1, help="Approximate target token budget."),
+    overlap_tokens: int = typer.Option(150, "--overlap-tokens", min=0, help="Policy metadata overlap budget."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Build PDF context chunks from text evidence."""
+    config = load_config(config_path)
+    _init_paths(config)
+    result = chunk_pdf(config, source_id=source_id, target_tokens=target_tokens, overlap_tokens=overlap_tokens)
+    typer.echo(f"chunks_created={result.created} chunks_skipped={result.skipped}")
+
+
+@app.command("detect-pdf-spans")
+def detect_pdf_spans_command(
+    source_id: Optional[str] = typer.Option(None, "--source-id", help="Only detect spans for this source."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Detect claim-bearing spans in primary PDF evidence."""
+    config = load_config(config_path)
+    _init_paths(config)
+    result = detect_pdf_spans(config, source_id=source_id)
+    typer.echo(f"spans_created={result.created} spans_skipped={result.skipped}")
+
+
 @app.command("validate-claims")
 def validate_claims_command(
     source_id: Optional[str] = typer.Option(None, "--source-id", help="Only validate claims for this source."),
@@ -227,6 +290,7 @@ def validate_artifacts(
     schema_by_key = {
         "sources": "source",
         "chat_messages": "chat_message",
+        "pdf_blocks": "pdf_block",
         "evidence": "evidence",
         "chunks": "chunk",
         "spans": "span",

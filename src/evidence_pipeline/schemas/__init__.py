@@ -3,6 +3,7 @@ from evidence_pipeline.schemas.chat import ChatMessageRecord
 from evidence_pipeline.schemas.chunks import ChunkRecord
 from evidence_pipeline.schemas.claims import NormalizedClaimRecord, RawClaimRecord, ValidatedClaimRecord
 from evidence_pipeline.schemas.evidence import EvidenceRecord
+from evidence_pipeline.schemas.pdf import PDFBlockRecord
 from evidence_pipeline.schemas.sources import SourceRecord
 from evidence_pipeline.schemas.spans import SpanRecord
 from evidence_pipeline.schemas.validation import ErrorRecord, QuarantineRecord, ValidationRecord
@@ -13,6 +14,9 @@ SCHEMA_REGISTRY = {
     "chat_message": ChatMessageRecord,
     "chat-message": ChatMessageRecord,
     "chat_messages": ChatMessageRecord,
+    "pdf_block": PDFBlockRecord,
+    "pdf-block": PDFBlockRecord,
+    "pdf_blocks": PDFBlockRecord,
     "evidence": EvidenceRecord,
     "chunk": ChunkRecord,
     "chunks": ChunkRecord,
@@ -40,6 +44,7 @@ __all__ = [
     "ErrorRecord",
     "EvidenceRecord",
     "NormalizedClaimRecord",
+    "PDFBlockRecord",
     "QuarantineRecord",
     "RawClaimRecord",
     "SCHEMA_REGISTRY",

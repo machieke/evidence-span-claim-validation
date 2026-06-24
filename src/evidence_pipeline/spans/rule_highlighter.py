@@ -45,7 +45,7 @@ _LOW_VALUE = {
 }
 
 
-def _score_segment(text: str) -> Optional[float]:
+def score_claim_bearing_segment(text: str) -> Optional[float]:
     normalized = text.strip().lower()
     if not normalized or normalized in _LOW_VALUE:
         return None
@@ -65,7 +65,7 @@ def _score_segment(text: str) -> Optional[float]:
     return min(score, 0.95)
 
 
-def _risk_flags(text: str, provenance: Dict[str, object], evidence_risk_flags: List[str]) -> List[str]:
+def risk_flags_for_text_segment(text: str, provenance: Dict[str, object], evidence_risk_flags: List[str]) -> List[str]:
     flags: Set[str] = set(evidence_risk_flags)
     if _COREFERENCE.search(text):
         flags.add("context_dependent_coreference")
@@ -97,7 +97,7 @@ def detect_chat_spans(config: PipelineConfig, source_id: Optional[str] = None) -
             if evidence is None or evidence.text is None:
                 continue
             for segment in split_sentences(evidence.text):
-                score = _score_segment(segment.text)
+                score = score_claim_bearing_segment(segment.text)
                 if score is None:
                     continue
                 span_id = stable_id(
@@ -128,7 +128,67 @@ def detect_chat_spans(config: PipelineConfig, source_id: Optional[str] = None) -
                         label="claim_bearing",
                         score=score,
                         detector={"name": "chat_rules_v1", "version": "0.1.0"},
-                        risk_flags=_risk_flags(segment.text, evidence.provenance, evidence.risk_flags),
+                        risk_flags=risk_flags_for_text_segment(segment.text, evidence.provenance, evidence.risk_flags),
+                    ),
+                )
+                existing_span_ids.add(span_id)
+                created += 1
+    return SpanDetectionResult(created=created, skipped=skipped)
+
+
+def detect_pdf_spans(config: PipelineConfig, source_id: Optional[str] = None) -> SpanDetectionResult:
+    paths = config.jsonl_paths()
+    evidence_by_id = {
+        evidence.evidence_id: evidence
+        for _, evidence in read_jsonl_records(paths["evidence"], EvidenceRecord)
+        if evidence.source_modality == "pdf"
+    }
+    existing_span_ids = existing_values(paths["spans"], "span_id")
+    created = 0
+    skipped = 0
+
+    for _, chunk in read_jsonl_records(paths["chunks"], ChunkRecord):
+        if chunk.source_modality != "pdf":
+            continue
+        if source_id is not None and chunk.source_id != source_id:
+            continue
+        for evidence_id in chunk.primary_evidence_ids:
+            evidence = evidence_by_id.get(evidence_id)
+            if evidence is None or evidence.text is None:
+                continue
+            for segment in split_sentences(evidence.text):
+                score = score_claim_bearing_segment(segment.text)
+                if score is None:
+                    continue
+                span_id = stable_id(
+                    "span_pdf",
+                    {
+                        "chunk_id": chunk.chunk_id,
+                        "evidence_id": evidence.evidence_id,
+                        "char_start": segment.char_start,
+                        "char_end": segment.char_end,
+                        "detector": "pdf_rules_v1",
+                    },
+                )
+                if span_id in existing_span_ids:
+                    skipped += 1
+                    continue
+                append_jsonl(
+                    paths["spans"],
+                    SpanRecord(
+                        span_id=span_id,
+                        chunk_id=chunk.chunk_id,
+                        source_id=evidence.source_id,
+                        source_modality="pdf",
+                        evidence_id=evidence.evidence_id,
+                        text=segment.text,
+                        char_start=segment.char_start,
+                        char_end=segment.char_end,
+                        context_text=chunk.text,
+                        label="claim_bearing",
+                        score=score,
+                        detector={"name": "pdf_rules_v1", "version": "0.1.0"},
+                        risk_flags=risk_flags_for_text_segment(segment.text, evidence.provenance, evidence.risk_flags),
                     ),
                 )
                 existing_span_ids.add(span_id)
