@@ -61,6 +61,8 @@ def test_pdf_artifact_pipeline_is_idempotent(tmp_path: Path):
             ["build-pdf-evidence"],
             ["chunk-pdf", "--target-tokens", "20"],
             ["detect-pdf-spans"],
+            ["extract-claims", "--modality", "pdf"],
+            ["validate-claims"],
         ]
         for command in commands:
             first = runner.invoke(app, command)
@@ -77,6 +79,8 @@ def test_pdf_artifact_pipeline_is_idempotent(tmp_path: Path):
         assert "The vessel Hope appears to have an older diesel engine." in span_texts
         assert "It was replaced in 2024." in span_texts
         assert "The surveyor found no active fuel leak." in span_texts
+        assert len(list(read_jsonl(Path("data/jsonl/claims.raw.jsonl")))) == 3
+        assert len(list(read_jsonl(Path("data/jsonl/claims.validated.jsonl")))) == 3
 
         artifact_check = runner.invoke(app, ["validate-artifacts"])
         assert artifact_check.exit_code == 0, artifact_check.stdout

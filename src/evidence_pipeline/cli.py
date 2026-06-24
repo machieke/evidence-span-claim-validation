@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from evidence_pipeline.chunking.chat_chunker import chunk_chat
 from evidence_pipeline.chunking.pdf_chunker import chunk_pdf
 from evidence_pipeline.config import PipelineConfig, load_config
+from evidence_pipeline.extraction.claim_extractor import extract_claims_from_spans
 from evidence_pipeline.ingest.chat import ingest_chat_export
 from evidence_pipeline.ingest.chat_evidence import build_chat_evidence
 from evidence_pipeline.ingest.pdf import ingest_pdf
@@ -251,6 +252,22 @@ def validate_claims_command(
         f"claims_accepted={result.accepted} claims_quarantined={result.quarantined} "
         f"claims_skipped={result.skipped}"
     )
+
+
+@app.command("extract-claims")
+def extract_claims_command(
+    modality: str = typer.Option("all", "--modality", help="Modality to extract: all, chat, or pdf."),
+    source_id: Optional[str] = typer.Option(None, "--source-id", help="Only extract claims for this source."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Extract source-faithful raw claims from detected spans using the baseline rules extractor."""
+    config = load_config(config_path)
+    _init_paths(config)
+    try:
+        result = extract_claims_from_spans(config, modality=modality, source_id=source_id)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc))
+    typer.echo(f"claims_created={result.created} claims_skipped={result.skipped}")
 
 
 @app.command("validate-jsonl")

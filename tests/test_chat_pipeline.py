@@ -55,6 +55,8 @@ def test_chat_pipeline_is_idempotent(tmp_path: Path):
             ["build-chat-evidence"],
             ["chunk-chat", "--previous-messages", "1"],
             ["detect-chat-spans"],
+            ["extract-claims", "--modality", "chat"],
+            ["validate-claims"],
         ]
         for command in commands:
             first = runner.invoke(app, command)
@@ -75,6 +77,8 @@ def test_chat_pipeline_is_idempotent(tmp_path: Path):
         ]
         assert "question_speech_act" in spans[0]["risk_flags"]
         assert "context_dependent_coreference" in spans[2]["risk_flags"]
+        assert len(list(read_jsonl(Path("data/jsonl/claims.raw.jsonl")))) == 3
+        assert len(list(read_jsonl(Path("data/jsonl/claims.validated.jsonl")))) == 3
 
         validate = runner.invoke(app, ["validate-artifacts"])
         assert validate.exit_code == 0, validate.stdout
