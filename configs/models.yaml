@@ -1,0 +1,5 @@
+models:
+  extraction_default: cheap_structured_json_model
+  extraction_strong: strong_reasoning_model
+  validation_default: cheap_validator_model
+  validation_strong: strong_validator_model

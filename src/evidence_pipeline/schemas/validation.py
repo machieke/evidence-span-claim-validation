@@ -1,0 +1,61 @@
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any, Dict, List, Literal, Optional
+
+from pydantic import Field
+
+from evidence_pipeline.schemas.base import StrictModel, utc_now
+
+ValidationStatus = Literal[
+    "schema_valid",
+    "schema_invalid",
+    "deterministic_valid",
+    "semantic_valid",
+    "accepted_extracted",
+    "needs_review",
+    "quarantined",
+    "repair_attempted",
+    "repaired",
+]
+
+
+class ValidationRecord(StrictModel):
+    validation_id: str
+    claim_id: Optional[str] = None
+    record_id: Optional[str] = None
+    stage: str
+    status: ValidationStatus
+    errors: List[str] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    validator_version: str = "deterministic.v1"
+    created_at: datetime = Field(default_factory=utc_now)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    schema_version: str = "validation.v1"
+
+
+class ErrorRecord(StrictModel):
+    error_id: str
+    stage: str
+    message: str
+    source_id: Optional[str] = None
+    record_id: Optional[str] = None
+    reason_code: Optional[str] = None
+    details: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=utc_now)
+    schema_version: str = "error.v1"
+
+
+class QuarantineRecord(StrictModel):
+    quarantine_id: str
+    record_type: str
+    record_id: str
+    source_id: Optional[str] = None
+    evidence_id: Optional[str] = None
+    claim_id: Optional[str] = None
+    stage: str
+    reason_codes: List[str] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    payload: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=utc_now)
+    schema_version: str = "quarantine.v1"

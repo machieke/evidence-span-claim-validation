@@ -1,0 +1,9 @@
+modalities:
+  chat:
+    enabled: true
+  pdf:
+    enabled: true
+  audio:
+    enabled: true
+  image:
+    enabled: true

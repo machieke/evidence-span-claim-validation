@@ -1,0 +1,18 @@
+paths:
+  data_dir: data
+  raw_dir: data/raw
+  work_dir: data/work
+  jsonl_dir: data/jsonl
+  reports_dir: data/reports
+
+jsonl:
+  sources: sources.jsonl
+  evidence: evidence.jsonl
+  chunks: chunks.jsonl
+  spans: spans.jsonl
+  claims_raw: claims.raw.jsonl
+  validations: validations.jsonl
+  claims_validated: claims.validated.jsonl
+  claims_normalized: claims.normalized.jsonl
+  errors: errors.jsonl
+  quarantine: quarantine.jsonl
