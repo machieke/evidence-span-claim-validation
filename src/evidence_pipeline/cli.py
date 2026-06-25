@@ -17,6 +17,7 @@ from evidence_pipeline.ingest.pdf import ingest_pdf
 from evidence_pipeline.ingest.pdf_evidence import build_pdf_evidence
 from evidence_pipeline.ids import sha256_file, stable_id
 from evidence_pipeline.jsonl import JSONLDecodeError, append_jsonl, find_record, read_jsonl
+from evidence_pipeline.reports.summary import write_summary_report
 from evidence_pipeline.schemas import SCHEMA_REGISTRY, EvidenceRecord, SourceModality, SourceRecord
 from evidence_pipeline.spans.rule_highlighter import detect_chat_spans, detect_pdf_spans
 from evidence_pipeline.validation.deterministic import validate_raw_claims
@@ -268,6 +269,18 @@ def extract_claims_command(
     except ValueError as exc:
         raise typer.BadParameter(str(exc))
     typer.echo(f"claims_created={result.created} claims_skipped={result.skipped}")
+
+
+@app.command("report")
+def report_command(
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Markdown report output path."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Write a Markdown extraction summary report."""
+    config = load_config(config_path)
+    _init_paths(config)
+    result = write_summary_report(config, output_path=output)
+    typer.echo(str(result.output_path))
 
 
 @app.command("validate-jsonl")
