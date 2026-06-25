@@ -27,6 +27,7 @@ PYTHONPATH=src python3 -m evidence_pipeline chunk-chat
 PYTHONPATH=src python3 -m evidence_pipeline detect-chat-spans
 PYTHONPATH=src python3 -m evidence_pipeline extract-claims --modality chat
 PYTHONPATH=src python3 -m evidence_pipeline validate-claims
+PYTHONPATH=src python3 -m evidence_pipeline normalize-claims
 PYTHONPATH=src python3 -m evidence_pipeline report
 PYTHONPATH=src python3 -m evidence_pipeline validate-artifacts
 ```
@@ -40,6 +41,7 @@ PYTHONPATH=src python3 -m evidence_pipeline chunk-pdf
 PYTHONPATH=src python3 -m evidence_pipeline detect-pdf-spans
 PYTHONPATH=src python3 -m evidence_pipeline extract-claims --modality pdf
 PYTHONPATH=src python3 -m evidence_pipeline validate-claims
+PYTHONPATH=src python3 -m evidence_pipeline normalize-claims
 PYTHONPATH=src python3 -m evidence_pipeline report
 PYTHONPATH=src python3 -m evidence_pipeline validate-artifacts
 ```

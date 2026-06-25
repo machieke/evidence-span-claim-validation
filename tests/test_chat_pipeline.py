@@ -57,6 +57,7 @@ def test_chat_pipeline_is_idempotent(tmp_path: Path):
             ["detect-chat-spans"],
             ["extract-claims", "--modality", "chat"],
             ["validate-claims"],
+            ["normalize-claims"],
         ]
         for command in commands:
             first = runner.invoke(app, command)
@@ -79,12 +80,14 @@ def test_chat_pipeline_is_idempotent(tmp_path: Path):
         assert "context_dependent_coreference" in spans[2]["risk_flags"]
         assert len(list(read_jsonl(Path("data/jsonl/claims.raw.jsonl")))) == 3
         assert len(list(read_jsonl(Path("data/jsonl/claims.validated.jsonl")))) == 3
+        assert len(list(read_jsonl(Path("data/jsonl/claims.normalized.jsonl")))) == 3
 
         report = runner.invoke(app, ["report"])
         assert report.exit_code == 0, report.stdout
         report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
         assert "# Evidence Pipeline Extraction Summary" in report_text
         assert "| claims_validated | 3 |" in report_text
+        assert "| claims_normalized | 3 |" in report_text
 
         validate = runner.invoke(app, ["validate-artifacts"])
         assert validate.exit_code == 0, validate.stdout

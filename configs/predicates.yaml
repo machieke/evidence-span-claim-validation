@@ -1,0 +1,15 @@
+predicates:
+  asserts:
+    description: Speaker or source asserts proposition.
+  asks_whether:
+    description: Speaker or source asks whether proposition holds.
+  negates:
+    description: Speaker or source denies proposition.
+  asserts_uncertain:
+    description: Speaker or source asserts proposition with uncertainty.
+  reports_observation:
+    description: Speaker reports direct observation.
+  reports:
+    description: Speaker or source reports another assertion.
+  model_observation:
+    description: Model emits an observation or hypothesis.
