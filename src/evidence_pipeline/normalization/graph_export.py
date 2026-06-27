@@ -21,7 +21,8 @@ def _edge_from_normalized_claim(record: NormalizedClaimRecord) -> Dict[str, obje
     subject = normalized.get("subject")
     predicate = normalized.get("predicate")
     object_value = normalized.get("object")
-    qualifiers = normalized.get("qualifiers") or {}
+    raw_qualifiers = normalized.get("qualifiers") or {}
+    qualifiers = raw_qualifiers if isinstance(raw_qualifiers, dict) else {}
     edge_id = stable_id(
         "edge",
         {
@@ -40,6 +41,8 @@ def _edge_from_normalized_claim(record: NormalizedClaimRecord) -> Dict[str, obje
         "subject": subject,
         "predicate": predicate,
         "object": object_value,
+        "truth_status": qualifiers.get("truth_status"),
+        "attribution": qualifiers.get("attribution"),
         "qualifiers": qualifiers,
         "schema_version": "graph.edge.v1",
     }
