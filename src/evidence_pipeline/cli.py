@@ -26,6 +26,7 @@ from evidence_pipeline.jsonl import JSONLDecodeError, append_jsonl, find_record,
 from evidence_pipeline.normalization.claims import normalize_claims
 from evidence_pipeline.normalization.dedupe import dedupe_normalized_claims
 from evidence_pipeline.normalization.graph_export import export_graph_jsonl
+from evidence_pipeline.normalization.metta_export import export_metta
 from evidence_pipeline.reports.summary import write_summary_report
 from evidence_pipeline.reports.gold_eval import write_gold_eval_report
 from evidence_pipeline.reports.lineage import trace_claim, write_claim_trace
@@ -786,6 +787,18 @@ def export_sqlite_command(
         f"{result.output_path} tables={len(result.table_counts)} "
         f"records={sum(result.table_counts.values())}"
     )
+
+
+@app.command("export-metta")
+def export_metta_command(
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="MeTTa output path."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Export normalized claims as MeTTa-style S-expressions."""
+    config = load_config(config_path)
+    _init_paths(config)
+    result = export_metta(config, output_path=output)
+    typer.echo(f"{result.output_path} claims={result.claim_count}")
 
 
 @app.command("eval-gold")

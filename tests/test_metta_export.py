@@ -1,0 +1,44 @@
+from pathlib import Path
+
+from typer.testing import CliRunner
+
+from evidence_pipeline.cli import app
+from evidence_pipeline.jsonl import append_jsonl
+from evidence_pipeline.schemas.claims import NormalizedClaimRecord
+
+
+runner = CliRunner()
+
+
+def test_export_metta_writes_normalized_claim_expressions(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        init = runner.invoke(app, ["init"])
+        assert init.exit_code == 0
+
+        append_jsonl(
+            Path("data/jsonl/claims.normalized.jsonl"),
+            NormalizedClaimRecord(
+                normalized_claim_id="nclaim_1",
+                claim_id="claim_1",
+                source_id="src_1",
+                evidence_id="ev_1",
+                normalized_claim={
+                    "subject": "speaker:alice",
+                    "predicate": "asserts",
+                    "object": "Hope had three masts.",
+                    "qualifiers": {"modality": "asserted", "truth_status": "speaker_asserted_unverified"},
+                },
+            ),
+        )
+
+        first = runner.invoke(app, ["export-metta"])
+        second = runner.invoke(app, ["export-metta"])
+        assert first.exit_code == 0, first.stdout
+        assert second.exit_code == 0, second.stdout
+        assert "claims=1" in first.stdout
+
+        output = Path("data/reports/claims.metta").read_text(encoding="utf-8")
+        assert "; schema: metta.claim_export.v1" in output
+        assert '(claim "nclaim_1" "claim_1" "src_1" "ev_1" "speaker:alice" "asserts"' in output
+        assert '"Hope had three masts."' in output
+        assert '\\"truth_status\\":\\"speaker_asserted_unverified\\"' in output

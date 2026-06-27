@@ -31,6 +31,7 @@ PYTHONPATH=src python3 -m evidence_pipeline repair-claims
 PYTHONPATH=src python3 -m evidence_pipeline normalize-claims
 PYTHONPATH=src python3 -m evidence_pipeline export-graph
 PYTHONPATH=src python3 -m evidence_pipeline export-sqlite
+PYTHONPATH=src python3 -m evidence_pipeline export-metta
 PYTHONPATH=src python3 -m evidence_pipeline dedupe-claims
 PYTHONPATH=src python3 -m evidence_pipeline report
 PYTHONPATH=src python3 -m evidence_pipeline review-claim claim_... --decision accept --reviewer-id reviewer_1
