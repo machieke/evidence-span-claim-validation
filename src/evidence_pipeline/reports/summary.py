@@ -105,6 +105,7 @@ def render_summary_markdown(config: PipelineConfig) -> Tuple[str, Dict[str, int]
         "claims_validated": _rows(paths["claims_validated"]),
         "claims_normalized": _rows(paths["claims_normalized"]),
         "review_decisions": _rows(paths["review_decisions"]),
+        "audit_events": _rows(paths["audit_events"]),
         "errors": _rows(paths["errors"]),
         "quarantine": _rows(paths["quarantine"]),
     }
@@ -134,6 +135,7 @@ def render_summary_markdown(config: PipelineConfig) -> Tuple[str, Dict[str, int]
     lines.extend(_counter_table("Validated Claims By Modality", "Modality", validated_claim_modalities))
     lines.extend(_counter_table("Validation Statuses", "Status", _count_validation_status(artifacts["validations"])))
     lines.extend(_counter_table("Review Decisions", "Decision", _count_by(artifacts["review_decisions"], "decision")))
+    lines.extend(_counter_table("Audit Events", "Action", _count_by(artifacts["audit_events"], "action")))
     lines.extend(_counter_table("Quarantine Reasons", "Reason", _count_quarantine_reasons(artifacts["quarantine"])))
 
     lines.extend(["## Quality Metrics", ""])

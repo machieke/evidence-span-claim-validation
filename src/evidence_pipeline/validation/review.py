@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import List, Optional
 
 from evidence_pipeline.config import PipelineConfig
 from evidence_pipeline.ids import stable_id
 from evidence_pipeline.jsonl import append_jsonl, existing_values, read_jsonl
+from evidence_pipeline.schemas.audit import AuditEventRecord
+from evidence_pipeline.schemas.base import utc_now
 from evidence_pipeline.schemas.review import ReviewDecisionRecord
 
 REVIEW_DECISIONS = {"accept", "reject", "needs_review"}
@@ -53,6 +56,70 @@ def _review_id(
     )
 
 
+def _audit_event_id(
+    action: str,
+    reviewer_id: str,
+    claim_id: str,
+    review_id: str,
+    status: str,
+    created_at: datetime,
+) -> str:
+    return stable_id(
+        "audit",
+        {
+            "action": action,
+            "reviewer_id": reviewer_id,
+            "claim_id": claim_id,
+            "review_id": review_id,
+            "status": status,
+            "created_at": created_at.isoformat(),
+        },
+    )
+
+
+def _append_review_audit(
+    config: PipelineConfig,
+    claim: dict,
+    review_id: str,
+    reviewer_id: str,
+    decision: str,
+    reason_codes: List[str],
+    status: str,
+    skip_reason: Optional[str] = None,
+) -> None:
+    created_at = utc_now()
+    details = {
+        "decision": decision,
+        "reason_codes": reason_codes,
+        "review_id": review_id,
+    }
+    if skip_reason:
+        details["skip_reason"] = skip_reason
+    append_jsonl(
+        config.jsonl_paths()["audit_events"],
+        AuditEventRecord(
+            audit_event_id=_audit_event_id(
+                "review_claim",
+                reviewer_id,
+                str(claim["claim_id"]),
+                review_id,
+                status,
+                created_at,
+            ),
+            action="review_claim",
+            actor_id=reviewer_id,
+            target_type="claim",
+            target_id=str(claim["claim_id"]),
+            source_id=claim.get("source_id"),
+            evidence_id=claim.get("evidence_id"),
+            claim_id=str(claim["claim_id"]),
+            status=status,
+            details=details,
+            created_at=created_at,
+        ),
+    )
+
+
 def record_claim_review(
     config: PipelineConfig,
     claim_id: str,
@@ -70,6 +137,16 @@ def record_claim_review(
     paths = config.jsonl_paths()
     review_id = _review_id(claim_id, reviewer_id, normalized_decision, normalized_reason_codes, notes)
     if review_id in existing_values(paths["review_decisions"], "review_id"):
+        _append_review_audit(
+            config,
+            claim,
+            review_id,
+            reviewer_id,
+            normalized_decision,
+            normalized_reason_codes,
+            status="skipped",
+            skip_reason="duplicate_review",
+        )
         return ClaimReviewResult(review_id=review_id, created=False)
 
     append_jsonl(
@@ -85,5 +162,14 @@ def record_claim_review(
             notes=notes,
             metadata={"claim_type": claim.get("claim_type"), "source_modality": claim.get("source_modality")},
         ),
+    )
+    _append_review_audit(
+        config,
+        claim,
+        review_id,
+        reviewer_id,
+        normalized_decision,
+        normalized_reason_codes,
+        status="created",
     )
     return ClaimReviewResult(review_id=review_id, created=True)

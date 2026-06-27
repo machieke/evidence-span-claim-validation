@@ -80,16 +80,27 @@ def test_review_claim_records_idempotent_decision_and_trace(tmp_path: Path):
         assert reviews[0]["decision"] == "accept"
         assert reviews[0]["reason_codes"] == ["human_confirmed_label"]
 
+        audit_events = [payload for _, payload in read_jsonl(Path("data/jsonl/audit_events.jsonl"))]
+        assert len(audit_events) == 2
+        assert [event["status"] for event in audit_events] == ["created", "skipped"]
+        assert all(event["action"] == "review_claim" for event in audit_events)
+        assert all(event["actor_id"] == "reviewer_1" for event in audit_events)
+        assert all(event["claim_id"] == "claim_img_label_1" for event in audit_events)
+        assert audit_events[1]["details"]["skip_reason"] == "duplicate_review"
+
         trace = runner.invoke(app, ["trace-claim", "claim_img_label_1"])
         assert trace.exit_code == 0, trace.stdout
         trace_payload = json.loads(trace.stdout)
         assert trace_payload["review_decisions"][0]["review_id"] == reviews[0]["review_id"]
+        assert [event["status"] for event in trace_payload["audit_events"]] == ["created", "skipped"]
 
         report = runner.invoke(app, ["report"])
         assert report.exit_code == 0, report.stdout
         report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
         assert "| review_decisions | 1 |" in report_text
+        assert "| audit_events | 2 |" in report_text
         assert "| accept | 1 |" in report_text
+        assert "| review_claim | 2 |" in report_text
 
         artifact_check = runner.invoke(app, ["validate-artifacts"])
         assert artifact_check.exit_code == 0, artifact_check.stdout

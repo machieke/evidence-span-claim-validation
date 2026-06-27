@@ -1,4 +1,5 @@
 from evidence_pipeline.schemas.base import SourceModality
+from evidence_pipeline.schemas.audit import AuditEventRecord
 from evidence_pipeline.schemas.audio import AudioUtteranceRecord
 from evidence_pipeline.schemas.chat import ChatMessageRecord
 from evidence_pipeline.schemas.chunks import ChunkRecord
@@ -56,6 +57,9 @@ SCHEMA_REGISTRY = {
     "review_decision": ReviewDecisionRecord,
     "review-decision": ReviewDecisionRecord,
     "review_decisions": ReviewDecisionRecord,
+    "audit_event": AuditEventRecord,
+    "audit-event": AuditEventRecord,
+    "audit_events": AuditEventRecord,
     "validation": ValidationRecord,
     "validations": ValidationRecord,
     "quarantine": QuarantineRecord,
@@ -67,6 +71,7 @@ __all__ = [
     "ChunkRecord",
     "ChatMessageRecord",
     "AudioUtteranceRecord",
+    "AuditEventRecord",
     "ErrorRecord",
     "EvidenceRecord",
     "ImageFeatureClusterRecord",

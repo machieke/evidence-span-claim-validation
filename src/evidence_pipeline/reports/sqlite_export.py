@@ -26,6 +26,7 @@ ARTIFACT_KEY_FIELDS = {
     "claims_validated": "claim_id",
     "claims_normalized": "normalized_claim_id",
     "review_decisions": "review_id",
+    "audit_events": "audit_event_id",
     "errors": "error_id",
     "quarantine": "quarantine_id",
 }

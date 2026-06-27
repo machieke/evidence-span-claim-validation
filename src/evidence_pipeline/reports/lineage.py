@@ -30,6 +30,7 @@ def trace_claim(config: PipelineConfig, claim_id: str) -> Dict[str, Any]:
     normalized_claims = _rows(paths["claims_normalized"])
     validations = _rows(paths["validations"])
     review_decisions = _rows(paths["review_decisions"])
+    audit_events = _rows(paths["audit_events"])
     quarantine = _rows(paths["quarantine"])
     evidence_rows = _rows(paths["evidence"])
     span_rows = _rows(paths["spans"])
@@ -41,6 +42,7 @@ def trace_claim(config: PipelineConfig, claim_id: str) -> Dict[str, Any]:
     normalized = _all_by(normalized_claims, "claim_id", claim_id)
     claim_validations = _all_by(validations, "claim_id", claim_id)
     claim_reviews = _all_by(review_decisions, "claim_id", claim_id)
+    claim_audit_events = _all_by(audit_events, "claim_id", claim_id)
     quarantined = _all_by(quarantine, "claim_id", claim_id)
 
     anchor = raw_claim or validated_claim or (normalized[0] if normalized else None)
@@ -67,6 +69,7 @@ def trace_claim(config: PipelineConfig, claim_id: str) -> Dict[str, Any]:
         "raw_claim": raw_claim,
         "validations": claim_validations,
         "review_decisions": claim_reviews,
+        "audit_events": claim_audit_events,
         "validated_claim": validated_claim,
         "normalized_claims": normalized,
         "quarantine": quarantined,

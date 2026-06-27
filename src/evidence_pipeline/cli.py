@@ -973,6 +973,7 @@ def validate_artifacts(
         "claims_validated": "claim.validated",
         "claims_normalized": "claim.normalized",
         "review_decisions": "review_decision",
+        "audit_events": "audit_event",
         "errors": "error",
         "quarantine": "quarantine",
     }

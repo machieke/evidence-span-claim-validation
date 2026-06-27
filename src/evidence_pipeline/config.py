@@ -32,6 +32,7 @@ class JSONLConfig(BaseModel):
     claims_validated: str = "claims.validated.jsonl"
     claims_normalized: str = "claims.normalized.jsonl"
     review_decisions: str = "review_decisions.jsonl"
+    audit_events: str = "audit_events.jsonl"
     errors: str = "errors.jsonl"
     quarantine: str = "quarantine.jsonl"
 

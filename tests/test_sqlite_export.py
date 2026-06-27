@@ -53,6 +53,7 @@ def test_export_sqlite_writes_artifact_tables_and_counts(tmp_path: Path):
             evidence_count = connection.execute("SELECT COUNT(*) FROM evidence").fetchone()[0]
             claims_count = connection.execute("SELECT COUNT(*) FROM claims_raw").fetchone()[0]
             review_count = connection.execute("SELECT COUNT(*) FROM review_decisions").fetchone()[0]
+            audit_count = connection.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0]
             artifact_count = connection.execute(
                 "SELECT record_count FROM artifact_counts WHERE artifact_name = ?",
                 ("claims_raw",),
@@ -65,5 +66,6 @@ def test_export_sqlite_writes_artifact_tables_and_counts(tmp_path: Path):
         assert evidence_count == 1
         assert claims_count == 1
         assert review_count == 0
+        assert audit_count == 0
         assert artifact_count == 1
         assert json.loads(payload_json)["claim_id"] == "claim_1"
