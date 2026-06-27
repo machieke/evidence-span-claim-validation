@@ -270,6 +270,20 @@ def render_summary_markdown(config: PipelineConfig) -> Tuple[str, Dict[str, int]
         )
     )
     lines.extend(_counter_table("Jobs By Stage", "Stage", _count_by(artifacts["jobs"], "stage")))
+    lines.extend(
+        _counter_table(
+            "Model Routing By Tier",
+            "Tier",
+            _count_by(artifacts["model_routing"], "selected_tier"),
+        )
+    )
+    lines.extend(
+        _counter_table(
+            "Model Routing By Role",
+            "Role",
+            _count_by(artifacts["model_routing"], "model_role"),
+        )
+    )
     lines.extend(_counter_table("Review Decisions", "Decision", _count_by(artifacts["review_decisions"], "decision")))
     lines.extend(_counter_table("Audit Events", "Action", _count_by(artifacts["audit_events"], "action")))
     lines.extend(_counter_table("Quarantine Reasons", "Reason", _count_quarantine_reasons(artifacts["quarantine"])))

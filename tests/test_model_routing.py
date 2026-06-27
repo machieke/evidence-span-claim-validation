@@ -106,6 +106,16 @@ routing:
         assert recommendations["claim_image"]["reasons"] == ["modality:image"]
         assert "Hope had three masts." not in output_text
 
+        report = runner.invoke(app, ["report"])
+        assert report.exit_code == 0, report.stdout
+        report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
+        assert "## Model Routing By Tier" in report_text
+        assert "| default | 1 |" in report_text
+        assert "| strong | 3 |" in report_text
+        assert "## Model Routing By Role" in report_text
+        assert "| extraction | 2 |" in report_text
+        assert "| validation | 2 |" in report_text
+
         invalid = runner.invoke(app, ["route-models", "--stage", "embedding"])
         assert invalid.exit_code != 0
         assert "model routing supports stages" in invalid.stdout
