@@ -31,6 +31,10 @@ class _ExtractedPDFBlock:
     risk_flags: List[str]
 
 
+PAGE_FURNITURE_MAX_CHARS = 120
+PAGE_FURNITURE_MIN_PAGES = 2
+
+
 def clean_pdf_text(text: str) -> Tuple[str, List[str]]:
     cleaned = text.strip()
     actions: List[str] = []
@@ -47,6 +51,44 @@ def clean_pdf_text(text: str) -> Tuple[str, List[str]]:
         cleaned = collapsed
         actions.append("collapse_whitespace")
     return cleaned, actions
+
+
+def _page_furniture_signature(text: str) -> str:
+    cleaned, _ = clean_pdf_text(text)
+    normalized = re.sub(r"\b\d+\b", "#", cleaned.lower())
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def classify_repeated_pdf_furniture(blocks: List[_ExtractedPDFBlock]) -> Dict[Tuple[int, int], str]:
+    by_page: Dict[int, List[_ExtractedPDFBlock]] = {}
+    by_signature: Dict[str, List[_ExtractedPDFBlock]] = {}
+    for block in blocks:
+        by_page.setdefault(block.page, []).append(block)
+        signature = _page_furniture_signature(block.text)
+        if not signature or len(signature) > PAGE_FURNITURE_MAX_CHARS:
+            continue
+        by_signature.setdefault(signature, []).append(block)
+
+    first_block_by_page = {
+        page: min(page_blocks, key=lambda block: block.block_no).block_no
+        for page, page_blocks in by_page.items()
+    }
+    last_block_by_page = {
+        page: max(page_blocks, key=lambda block: block.block_no).block_no
+        for page, page_blocks in by_page.items()
+    }
+
+    furniture: Dict[Tuple[int, int], str] = {}
+    for occurrences in by_signature.values():
+        pages = {block.page for block in occurrences}
+        if len(pages) < PAGE_FURNITURE_MIN_PAGES:
+            continue
+        for block in occurrences:
+            if block.block_no == first_block_by_page.get(block.page):
+                furniture[(block.page, block.block_no)] = "header"
+            elif block.block_no == last_block_by_page.get(block.page):
+                furniture[(block.page, block.block_no)] = "footer"
+    return furniture
 
 
 def _extract_with_pymupdf(path: Path) -> Optional[List[_ExtractedPDFBlock]]:
@@ -109,8 +151,18 @@ def _extract_blocks(path: Path) -> List[_ExtractedPDFBlock]:
     return _extract_with_pypdf(path)
 
 
-def _record_from_block(source_id: str, source_file: Path, block: _ExtractedPDFBlock, char_start: int) -> PDFBlockRecord:
+def _record_from_block(
+    source_id: str,
+    source_file: Path,
+    block: _ExtractedPDFBlock,
+    char_start: int,
+    block_type: str = "text",
+) -> PDFBlockRecord:
     cleaned, cleanup_actions = clean_pdf_text(block.text)
+    risk_flags = list(block.risk_flags)
+    if block_type in {"header", "footer"}:
+        cleanup_actions.append("classify_repeated_page_furniture")
+        risk_flags.append("page_furniture")
     block_id = stable_id(
         "pdf_blk",
         {
@@ -126,7 +178,7 @@ def _record_from_block(source_id: str, source_file: Path, block: _ExtractedPDFBl
         source_file=str(source_file),
         page=block.page,
         block_no=block.block_no,
-        block_type="text",
+        block_type=block_type,
         text=cleaned,
         original_text=block.text,
         cleaned_text=cleaned,
@@ -135,7 +187,7 @@ def _record_from_block(source_id: str, source_file: Path, block: _ExtractedPDFBl
         char_start_document=char_start,
         char_end_document=char_start + len(cleaned),
         extractor=block.extractor,
-        risk_flags=block.risk_flags,
+        risk_flags=sorted(set(risk_flags)),
     )
 
 
@@ -146,6 +198,7 @@ def ingest_pdf(path: Path, config: PipelineConfig, metadata: Optional[Dict[str, 
     paths = config.jsonl_paths()
 
     blocks = _extract_blocks(path)
+    furniture_blocks = classify_repeated_pdf_furniture(blocks)
     extractor = blocks[0].extractor if blocks else "none"
     existing_sources = existing_values(paths["sources"], "source_id")
     source_created = source_id not in existing_sources
@@ -166,7 +219,13 @@ def ingest_pdf(path: Path, config: PipelineConfig, metadata: Optional[Dict[str, 
     skipped = 0
     char_start = 0
     for block in blocks:
-        record = _record_from_block(source_id, path, block, char_start)
+        record = _record_from_block(
+            source_id,
+            path,
+            block,
+            char_start,
+            block_type=furniture_blocks.get((block.page, block.block_no), "text"),
+        )
         char_start = (record.char_end_document or char_start) + 1
         if record.block_id in existing_block_ids:
             skipped += 1

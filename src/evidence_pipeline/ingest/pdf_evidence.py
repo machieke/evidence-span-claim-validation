@@ -29,6 +29,9 @@ def build_pdf_evidence(config: PipelineConfig, source_id: Optional[str] = None) 
     for _, block in read_jsonl_records(paths["pdf_blocks"], PDFBlockRecord):
         if source_id is not None and block.source_id != source_id:
             continue
+        if block.block_type in {"header", "footer"}:
+            skipped += 1
+            continue
         evidence_id = _pdf_evidence_id(block)
         if evidence_id in existing_ids:
             skipped += 1
