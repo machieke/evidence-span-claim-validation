@@ -16,6 +16,16 @@ class SummaryReportResult:
     record_counts: Dict[str, int]
 
 
+REPORT_JSONL_FILES = {
+    "claim_graph": "claim_graph.jsonl",
+    "claim_duplicates": "claim_duplicates.jsonl",
+    "claim_repairs": "claim_repairs.jsonl",
+    "model_routing": "model_routing.jsonl",
+    "privacy_policy_violations": "privacy_policy_violations.jsonl",
+    "retention_plan": "retention_plan.jsonl",
+}
+
+
 def _rows(path: Path) -> List[dict]:
     return [payload for _, payload in read_jsonl(path)]
 
@@ -133,8 +143,9 @@ def render_summary_markdown(config: PipelineConfig) -> Tuple[str, Dict[str, int]
         "audit_events": _rows(paths["audit_events"]),
         "errors": _rows(paths["errors"]),
         "quarantine": _rows(paths["quarantine"]),
-        "claim_repairs": _optional_rows(config.paths.reports_dir / "claim_repairs.jsonl"),
     }
+    for artifact_name, filename in REPORT_JSONL_FILES.items():
+        artifacts[artifact_name] = _optional_rows(config.paths.reports_dir / filename)
     record_counts = {name: len(rows) for name, rows in artifacts.items()}
 
     lines: List[str] = [

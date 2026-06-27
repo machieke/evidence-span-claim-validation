@@ -136,6 +136,7 @@ def test_chat_pipeline_is_idempotent(tmp_path: Path):
         assert report.exit_code == 0, report.stdout
         report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
         assert "# Evidence Pipeline Extraction Summary" in report_text
+        assert "| claim_graph | 3 |" in report_text
         assert "| claims_validated | 3 |" in report_text
         assert "| claims_normalized | 3 |" in report_text
 
