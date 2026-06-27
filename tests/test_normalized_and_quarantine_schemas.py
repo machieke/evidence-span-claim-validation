@@ -1,7 +1,12 @@
 import pytest
 from pydantic import ValidationError
 
-from evidence_pipeline.schemas.claims import ClaimValidationSummary, NormalizedClaimRecord, ValidatedClaimRecord
+from evidence_pipeline.schemas.claims import (
+    ClaimValidationSummary,
+    EntityResolution,
+    NormalizedClaimRecord,
+    ValidatedClaimRecord,
+)
 from evidence_pipeline.schemas.validation import QuarantineRecord, ValidationRecord
 
 
@@ -33,6 +38,11 @@ def test_normalized_claim_requires_core_proposition_keys():
                 "predicate": "appears_condition",
             },
         )
+
+
+def test_entity_resolution_requires_auditable_identifiers():
+    with pytest.raises(ValidationError):
+        EntityResolution(surface="Hope", canonical_id="", confidence=0.9, basis="exact_name_match")
 
 
 def test_quarantine_record_has_machine_readable_reasons():

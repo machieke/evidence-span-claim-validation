@@ -130,9 +130,15 @@ class EntityResolution(StrictModel):
     basis: str
 
     @model_validator(mode="after")
-    def validate_confidence(self) -> "EntityResolution":
+    def validate_resolution(self) -> "EntityResolution":
         if not (0 <= self.confidence <= 1):
             raise ValueError("confidence must be between 0 and 1")
+        if not self.surface.strip():
+            raise ValueError("entity resolution surface must not be empty")
+        if not self.canonical_id.strip():
+            raise ValueError("entity resolution canonical_id must not be empty")
+        if not self.basis.strip():
+            raise ValueError("entity resolution basis must not be empty")
         return self
 
 
