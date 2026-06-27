@@ -98,6 +98,27 @@ def _build_utterance(source_id: str, index: int, utterance: Dict[str, Any], defa
     )
 
 
+def _mark_overlapping_speech(records: List[AudioUtteranceRecord]) -> List[AudioUtteranceRecord]:
+    overlapping_ids = set()
+    sorted_records = sorted(records, key=lambda record: (record.start, record.end, record.utterance_id))
+    for index, current in enumerate(sorted_records):
+        for other in sorted_records[index + 1:]:
+            if other.start >= current.end:
+                break
+            if other.end > current.start:
+                overlapping_ids.add(current.utterance_id)
+                overlapping_ids.add(other.utterance_id)
+
+    marked = []
+    for record in records:
+        if record.utterance_id not in overlapping_ids:
+            marked.append(record)
+            continue
+        risk_flags = sorted(set(record.risk_flags) | {"overlapping_speech"})
+        marked.append(record.model_copy(update={"risk_flags": risk_flags}))
+    return marked
+
+
 def ingest_audio_transcript(path: Path, config: PipelineConfig, metadata: Optional[Dict[str, Any]] = None) -> AudioTranscriptIngestResult:
     utterances, defaults = _load_transcript(path)
     metadata = dict(metadata or {})
@@ -126,8 +147,11 @@ def ingest_audio_transcript(path: Path, config: PipelineConfig, metadata: Option
     existing_utterance_ids = existing_values(paths["audio_utterances"], "utterance_id")
     created = 0
     skipped = 0
-    for index, utterance in enumerate(utterances):
-        record = _build_utterance(source_id, index, utterance, defaults)
+    records = [
+        _build_utterance(source_id, index, utterance, defaults)
+        for index, utterance in enumerate(utterances)
+    ]
+    for record in _mark_overlapping_speech(records):
         if record.utterance_id in existing_utterance_ids:
             skipped += 1
             continue

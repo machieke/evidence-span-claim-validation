@@ -47,6 +47,34 @@ def _write_audio_transcript(path: Path) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
+def _write_overlapping_audio_transcript(path: Path) -> None:
+    payload = {
+        "source_file": "overlap.wav",
+        "language": "en",
+        "utterances": [
+            {
+                "id": "utt_overlap_1",
+                "speaker": "SPEAKER_00",
+                "start": 0.0,
+                "end": 3.0,
+                "text": "Hope had three masts.",
+                "asr_confidence": 0.95,
+                "diarization_confidence": 0.9,
+            },
+            {
+                "id": "utt_overlap_2",
+                "speaker": "SPEAKER_01",
+                "start": 2.5,
+                "end": 4.0,
+                "text": "The engine was replaced.",
+                "asr_confidence": 0.96,
+                "diarization_confidence": 0.88,
+            },
+        ],
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
 def test_audio_transcript_pipeline_is_idempotent(tmp_path: Path):
     with runner.isolated_filesystem(temp_dir=tmp_path):
         transcript = Path("transcript.json")
@@ -95,3 +123,34 @@ def test_audio_transcript_pipeline_is_idempotent(tmp_path: Path):
 
         artifact_check = runner.invoke(app, ["validate-artifacts"])
         assert artifact_check.exit_code == 0, artifact_check.stdout
+
+
+def test_overlapping_audio_speech_is_quarantined(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        transcript = Path("overlap.json")
+        _write_overlapping_audio_transcript(transcript)
+
+        commands = [
+            ["ingest-audio-transcript", "overlap.json"],
+            ["build-audio-evidence"],
+            ["chunk-audio"],
+            ["detect-audio-spans"],
+            ["extract-claims", "--modality", "audio"],
+            ["validate-claims"],
+        ]
+        for command in commands:
+            result = runner.invoke(app, command)
+            assert result.exit_code == 0, result.stdout
+
+        utterances = [payload for _, payload in read_jsonl(Path("data/jsonl/audio_utterances.jsonl"))]
+        assert all("overlapping_speech" in utterance["risk_flags"] for utterance in utterances)
+
+        raw_claims = [payload for _, payload in read_jsonl(Path("data/jsonl/claims.raw.jsonl"))]
+        assert len(raw_claims) == 2
+        assert all("overlapping_speech" in claim["risk_flags"] for claim in raw_claims)
+
+        validations = [payload for _, payload in read_jsonl(Path("data/jsonl/validations.jsonl"))]
+        quarantined = [payload for _, payload in read_jsonl(Path("data/jsonl/quarantine.jsonl"))]
+        assert all(validation["status"] == "quarantined" for validation in validations)
+        assert len(quarantined) == 2
+        assert all(record["reason_codes"] == ["overlapping_speech"] for record in quarantined)

@@ -131,6 +131,7 @@ def validate_claim_deterministically(
     attribution_errors = _validate_attribution(claim, evidence)
     errors.extend(attribution_errors)
     attribution_preserved = not attribution_errors
+    errors.extend(_audio_risk_errors(claim, evidence, span))
 
     claim_text = _claim_text_for_checks(claim)
     support_for_semantics = claim.evidence_text or support_text
@@ -198,6 +199,17 @@ def _combined_risk_flags(claim: RawClaimRecord, evidence: Optional[EvidenceRecor
     if span is not None:
         flags.update(span.risk_flags)
     return sorted(flags)
+
+
+def _audio_risk_errors(claim: RawClaimRecord, evidence: Optional[EvidenceRecord], span: Optional[SpanRecord]) -> List[str]:
+    if claim.source_modality != "audio":
+        return []
+    risk_flags = set(_combined_risk_flags(claim, evidence, span))
+    errors = []
+    for reason_code in ("low_asr_confidence", "speaker_uncertain", "overlapping_speech"):
+        if reason_code in risk_flags:
+            errors.append(reason_code)
+    return errors
 
 
 def _validation_id(claim_id: str) -> str:
