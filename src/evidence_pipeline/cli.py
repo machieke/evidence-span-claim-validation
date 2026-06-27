@@ -23,6 +23,7 @@ from evidence_pipeline.ingest.pdf_evidence import build_pdf_evidence
 from evidence_pipeline.ids import sha256_file, stable_id
 from evidence_pipeline.jsonl import JSONLDecodeError, append_jsonl, find_record, read_jsonl
 from evidence_pipeline.normalization.claims import normalize_claims
+from evidence_pipeline.normalization.dedupe import dedupe_normalized_claims
 from evidence_pipeline.normalization.graph_export import export_graph_jsonl
 from evidence_pipeline.reports.summary import write_summary_report
 from evidence_pipeline.reports.gold_eval import write_gold_eval_report
@@ -577,6 +578,19 @@ def trace_claim_command(
         typer.echo(f"{output} found={trace['found']}")
         return
     typer.echo(json.dumps(trace_claim(config, claim_id), indent=2, sort_keys=True))
+
+
+@app.command("dedupe-claims")
+def dedupe_claims_command(
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Duplicate group JSONL output path."),
+    include_singletons: bool = typer.Option(False, "--include-singletons", help="Include non-duplicate singleton groups."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Group duplicate normalized claims into a derived JSONL report."""
+    config = load_config(config_path)
+    _init_paths(config)
+    result = dedupe_normalized_claims(config, output_path=output, include_singletons=include_singletons)
+    typer.echo(f"{result.output_path} groups={result.group_count}")
 
 
 @app.command("validate-jsonl")
