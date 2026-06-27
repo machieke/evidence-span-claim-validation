@@ -56,6 +56,10 @@ CANONICAL_WORK_DIRS = [
     "vectors",
 ]
 
+EVIDENCE_MODALITIES = {"all", "chat", "pdf", "audio", "image"}
+TEXT_CHUNK_MODALITIES = {"all", "chat", "pdf", "audio"}
+TEXT_SPAN_MODALITIES = {"all", "chat", "pdf", "audio"}
+
 
 def _parse_metadata(values: Optional[List[str]]) -> dict:
     metadata = {}
@@ -89,6 +93,12 @@ def _init_paths(config: PipelineConfig) -> None:
         (config.paths.work_dir / name).mkdir(parents=True, exist_ok=True)
     for path in config.jsonl_paths().values():
         _touch(path)
+
+
+def _ensure_modality(modality: str, allowed: set, command_name: str) -> None:
+    if modality not in allowed:
+        expected = ", ".join(sorted(allowed))
+        raise typer.BadParameter(f"{command_name} supports: {expected}")
 
 
 @app.command("init")
@@ -418,6 +428,97 @@ def build_image_cluster_evidence_command(
     _init_paths(config)
     result = build_image_cluster_evidence(config, source_id=source_id)
     typer.echo(f"evidence_created={result.created} evidence_skipped={result.skipped}")
+
+
+@app.command("build-evidence")
+def build_evidence_command(
+    modality: str = typer.Option("all", "--modality", help="Modality to build: all, chat, pdf, audio, or image."),
+    source_id: Optional[str] = typer.Option(None, "--source-id", help="Only build evidence for this source."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Build evidence records for one or all modalities."""
+    _ensure_modality(modality, EVIDENCE_MODALITIES, "build-evidence")
+    config = load_config(config_path)
+    _init_paths(config)
+    outputs = []
+    if modality in {"all", "chat"}:
+        result = build_chat_evidence(config, source_id=source_id)
+        outputs.append(f"chat_evidence_created={result.created} chat_evidence_skipped={result.skipped}")
+    if modality in {"all", "pdf"}:
+        result = build_pdf_evidence(config, source_id=source_id)
+        outputs.append(f"pdf_evidence_created={result.created} pdf_evidence_skipped={result.skipped}")
+    if modality in {"all", "audio"}:
+        result = build_audio_evidence(config, source_id=source_id)
+        outputs.append(f"audio_evidence_created={result.created} audio_evidence_skipped={result.skipped}")
+    if modality in {"all", "image"}:
+        region_result = build_image_evidence(config, source_id=source_id)
+        cluster_result = build_image_cluster_evidence(config, source_id=source_id)
+        outputs.append(
+            f"image_evidence_created={region_result.created + cluster_result.created} "
+            f"image_evidence_skipped={region_result.skipped + cluster_result.skipped}"
+        )
+    typer.echo(" ".join(outputs))
+
+
+@app.command("chunk")
+def chunk_command(
+    modality: str = typer.Option("all", "--modality", help="Modality to chunk: all, chat, pdf, or audio."),
+    source_id: Optional[str] = typer.Option(None, "--source-id", help="Only chunk this source."),
+    previous_messages: int = typer.Option(2, "--previous-messages", min=0, help="Chat previous messages to include."),
+    previous_utterances: int = typer.Option(1, "--previous-utterances", min=0, help="Audio previous utterances to include."),
+    max_tokens: int = typer.Option(1200, "--max-tokens", min=1, help="Chat/audio policy metadata token budget."),
+    target_tokens: int = typer.Option(1200, "--target-tokens", min=1, help="PDF approximate target token budget."),
+    overlap_tokens: int = typer.Option(150, "--overlap-tokens", min=0, help="PDF policy metadata overlap budget."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Build context chunks for one or all text-like modalities."""
+    _ensure_modality(modality, TEXT_CHUNK_MODALITIES, "chunk")
+    config = load_config(config_path)
+    _init_paths(config)
+    outputs = []
+    if modality in {"all", "chat"}:
+        result = chunk_chat(config, source_id=source_id, previous_messages=previous_messages, max_tokens=max_tokens)
+        outputs.append(f"chat_chunks_created={result.created} chat_chunks_skipped={result.skipped}")
+    if modality in {"all", "pdf"}:
+        result = chunk_pdf(
+            config,
+            source_id=source_id,
+            target_tokens=target_tokens,
+            overlap_tokens=overlap_tokens,
+        )
+        outputs.append(f"pdf_chunks_created={result.created} pdf_chunks_skipped={result.skipped}")
+    if modality in {"all", "audio"}:
+        result = chunk_audio(
+            config,
+            source_id=source_id,
+            previous_utterances=previous_utterances,
+            max_tokens=max_tokens,
+        )
+        outputs.append(f"audio_chunks_created={result.created} audio_chunks_skipped={result.skipped}")
+    typer.echo(" ".join(outputs))
+
+
+@app.command("detect-spans")
+def detect_spans_command(
+    modality: str = typer.Option("all", "--modality", help="Modality to detect: all, chat, pdf, or audio."),
+    source_id: Optional[str] = typer.Option(None, "--source-id", help="Only detect spans for this source."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Detect claim-bearing spans for one or all text-like modalities."""
+    _ensure_modality(modality, TEXT_SPAN_MODALITIES, "detect-spans")
+    config = load_config(config_path)
+    _init_paths(config)
+    outputs = []
+    if modality in {"all", "chat"}:
+        result = detect_chat_spans(config, source_id=source_id)
+        outputs.append(f"chat_spans_created={result.created} chat_spans_skipped={result.skipped}")
+    if modality in {"all", "pdf"}:
+        result = detect_pdf_spans(config, source_id=source_id)
+        outputs.append(f"pdf_spans_created={result.created} pdf_spans_skipped={result.skipped}")
+    if modality in {"all", "audio"}:
+        result = detect_audio_spans(config, source_id=source_id)
+        outputs.append(f"audio_spans_created={result.created} audio_spans_skipped={result.skipped}")
+    typer.echo(" ".join(outputs))
 
 
 @app.command("run-chat")

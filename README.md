@@ -98,3 +98,11 @@ PYTHONPATH=src python3 -m evidence_pipeline run-pdf data/raw/pdf/report.pdf
 PYTHONPATH=src python3 -m evidence_pipeline run-audio-transcript data/raw/audio/transcript.json
 PYTHONPATH=src python3 -m evidence_pipeline run-images data/raw/images/
 ```
+
+Generic stage commands:
+
+```bash
+PYTHONPATH=src python3 -m evidence_pipeline build-evidence --modality all
+PYTHONPATH=src python3 -m evidence_pipeline chunk --modality chat
+PYTHONPATH=src python3 -m evidence_pipeline detect-spans --modality chat
+```
