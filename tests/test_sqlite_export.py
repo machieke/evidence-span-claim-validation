@@ -40,18 +40,34 @@ def test_export_sqlite_writes_artifact_tables_and_counts(tmp_path: Path):
         )
         append_jsonl(Path("data/jsonl/evidence.jsonl"), evidence)
         append_jsonl(Path("data/jsonl/claims.raw.jsonl"), claim)
+        append_jsonl(
+            Path("data/reports/claim_graph.jsonl"),
+            {
+                "edge_id": "edge_1",
+                "normalized_claim_id": "nclaim_1",
+                "claim_id": "claim_1",
+                "source_id": "src_1",
+                "evidence_id": "ev_1",
+                "subject": "speaker:alice",
+                "predicate": "asserts",
+                "object": "Hope had three masts.",
+                "truth_status": "speaker_asserted_unverified",
+                "schema_version": "graph.edge.v1",
+            },
+        )
 
         first = runner.invoke(app, ["export-sqlite"])
         second = runner.invoke(app, ["export-sqlite"])
         assert first.exit_code == 0, first.stdout
         assert second.exit_code == 0, second.stdout
-        assert "records=2" in first.stdout
+        assert "records=3" in first.stdout
 
         database_path = Path("data/reports/pipeline.sqlite")
         assert database_path.exists()
         with sqlite3.connect(database_path) as connection:
             evidence_count = connection.execute("SELECT COUNT(*) FROM evidence").fetchone()[0]
             claims_count = connection.execute("SELECT COUNT(*) FROM claims_raw").fetchone()[0]
+            graph_count = connection.execute("SELECT COUNT(*) FROM claim_graph").fetchone()[0]
             jobs_count = connection.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
             review_count = connection.execute("SELECT COUNT(*) FROM review_decisions").fetchone()[0]
             audit_count = connection.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0]
@@ -59,15 +75,26 @@ def test_export_sqlite_writes_artifact_tables_and_counts(tmp_path: Path):
                 "SELECT record_count FROM artifact_counts WHERE artifact_name = ?",
                 ("claims_raw",),
             ).fetchone()[0]
+            graph_artifact_count = connection.execute(
+                "SELECT record_count FROM artifact_counts WHERE artifact_name = ?",
+                ("claim_graph",),
+            ).fetchone()[0]
             payload_json = connection.execute(
                 "SELECT payload_json FROM claims_raw WHERE record_key = ?",
                 ("claim_1",),
             ).fetchone()[0]
+            graph_payload_json = connection.execute(
+                "SELECT payload_json FROM claim_graph WHERE record_key = ?",
+                ("edge_1",),
+            ).fetchone()[0]
 
         assert evidence_count == 1
         assert claims_count == 1
+        assert graph_count == 1
         assert jobs_count == 0
         assert review_count == 0
         assert audit_count == 0
         assert artifact_count == 1
+        assert graph_artifact_count == 1
         assert json.loads(payload_json)["claim_id"] == "claim_1"
+        assert json.loads(graph_payload_json)["edge_id"] == "edge_1"

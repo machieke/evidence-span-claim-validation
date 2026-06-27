@@ -30,6 +30,20 @@ ARTIFACT_KEY_FIELDS = {
     "audit_events": "audit_event_id",
     "errors": "error_id",
     "quarantine": "quarantine_id",
+    "claim_graph": "edge_id",
+    "claim_duplicates": "dedupe_id",
+    "claim_repairs": "repair_id",
+    "privacy_policy_violations": "violation_id",
+    "retention_plan": "retention_id",
+}
+
+REPORT_JSONL_FILES = {
+    "claim_graph": "claim_graph.jsonl",
+    "claim_duplicates": "claim_duplicates.jsonl",
+    "claim_repairs": "claim_repairs.jsonl",
+    "model_routing": "model_routing.jsonl",
+    "privacy_policy_violations": "privacy_policy_violations.jsonl",
+    "retention_plan": "retention_plan.jsonl",
 }
 
 
@@ -101,15 +115,24 @@ def _write_artifact_counts(connection: sqlite3.Connection, table_counts: Dict[st
     )
 
 
+def _export_paths(config: PipelineConfig) -> Dict[str, Path]:
+    paths = dict(config.jsonl_paths())
+    for artifact_name, filename in REPORT_JSONL_FILES.items():
+        path = config.paths.reports_dir / filename
+        if path.exists():
+            paths[artifact_name] = path
+    return paths
+
+
 def export_sqlite(config: PipelineConfig, output_path: Optional[Path] = None) -> SQLiteExportResult:
     if output_path is None:
         output_path = config.paths.reports_dir / "pipeline.sqlite"
     ensure_parent(output_path)
 
-    paths = config.jsonl_paths()
+    paths = _export_paths(config)
     table_counts: Dict[str, int] = {}
     with sqlite3.connect(output_path) as connection:
-        _drop_existing_tables(connection, paths.keys())
+        _drop_existing_tables(connection, list(paths.keys()) + list(REPORT_JSONL_FILES))
         for artifact_name, path in paths.items():
             _create_artifact_table(connection, artifact_name)
             table_counts[artifact_name] = _insert_artifact_rows(connection, artifact_name, read_jsonl(path))
