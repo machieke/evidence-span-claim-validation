@@ -1,3 +1,5 @@
+import json
+import sqlite3
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -43,6 +45,31 @@ def test_detect_pii_writes_redacted_findings_without_raw_matches(tmp_path: Path)
         assert "415-555-1212" not in output_text
         assert "a***@example.com" in output_text
         assert "***-***-1212" in output_text
+
+        report = runner.invoke(app, ["report"])
+        assert report.exit_code == 0, report.stdout
+        report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
+        assert "| pii_findings | 2 |" in report_text
+
+        export = runner.invoke(app, ["export-sqlite"])
+        assert export.exit_code == 0, export.stdout
+        with sqlite3.connect(Path("data/reports/pipeline.sqlite")) as connection:
+            finding_count = connection.execute("SELECT COUNT(*) FROM pii_findings").fetchone()[0]
+            artifact_count = connection.execute(
+                "SELECT record_count FROM artifact_counts WHERE artifact_name = ?",
+                ("pii_findings",),
+            ).fetchone()[0]
+            payload_json = connection.execute(
+                "SELECT payload_json FROM pii_findings WHERE record_key = ?",
+                (findings[0]["finding_id"],),
+            ).fetchone()[0]
+
+        exported_payload = json.loads(payload_json)
+        assert finding_count == 2
+        assert artifact_count == 2
+        assert exported_payload["pii_type"] in {"email", "phone"}
+        assert "alice@example.com" not in payload_json
+        assert "415-555-1212" not in payload_json
 
         invalid = runner.invoke(app, ["detect-pii", "--artifact", "images"])
         assert invalid.exit_code != 0

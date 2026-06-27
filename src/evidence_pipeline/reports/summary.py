@@ -21,6 +21,7 @@ REPORT_JSONL_FILES = {
     "claim_duplicates": "claim_duplicates.jsonl",
     "claim_repairs": "claim_repairs.jsonl",
     "model_routing": "model_routing.jsonl",
+    "pii_findings": "pii_findings.jsonl",
     "privacy_policy_violations": "privacy_policy_violations.jsonl",
     "retention_plan": "retention_plan.jsonl",
 }

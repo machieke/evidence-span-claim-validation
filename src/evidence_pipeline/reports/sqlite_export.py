@@ -34,6 +34,7 @@ ARTIFACT_KEY_FIELDS = {
     "claim_duplicates": "dedupe_id",
     "claim_repairs": "repair_id",
     "model_routing": "routing_id",
+    "pii_findings": "finding_id",
     "privacy_policy_violations": "violation_id",
     "retention_plan": "retention_id",
 }
@@ -43,6 +44,7 @@ REPORT_JSONL_FILES = {
     "claim_duplicates": "claim_duplicates.jsonl",
     "claim_repairs": "claim_repairs.jsonl",
     "model_routing": "model_routing.jsonl",
+    "pii_findings": "pii_findings.jsonl",
     "privacy_policy_violations": "privacy_policy_violations.jsonl",
     "retention_plan": "retention_plan.jsonl",
 }
