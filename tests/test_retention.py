@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -5,6 +6,7 @@ from typer.testing import CliRunner
 
 from evidence_pipeline.cli import app
 from evidence_pipeline.jsonl import append_jsonl, read_jsonl
+from evidence_pipeline.schemas.claims import RawClaimRecord
 from evidence_pipeline.schemas.sources import SourceRecord
 
 
@@ -39,6 +41,21 @@ def test_retention_plan_reports_old_raw_sources_without_deleting(tmp_path: Path)
                 ingested_at=datetime.now(timezone.utc),
             ),
         )
+        append_jsonl(
+            Path("data/jsonl/claims.raw.jsonl"),
+            RawClaimRecord(
+                claim_id="claim_old_source",
+                source_id="src_old",
+                source_modality="chat",
+                evidence_id="ev_old_source",
+                source_faithful_claim="The speaker asserted: Old source contains a claim.",
+                modality="asserted",
+                evidence_text="Old source contains a claim.",
+                attribution={"type": "speaker", "agent": "alice"},
+                truth_status="speaker_asserted_unverified",
+                confidence=0.9,
+            ),
+        )
 
         result = runner.invoke(app, ["retention-plan"])
         assert result.exit_code == 0, result.stdout
@@ -60,6 +77,14 @@ def test_retention_plan_reports_old_raw_sources_without_deleting(tmp_path: Path)
         assert "| retention_plan | 1 |" in report_text
         assert "## Retention Plan Reasons" in report_text
         assert "| raw_source_retention_exceeded | 1 |" in report_text
+
+        trace = runner.invoke(app, ["trace-claim", "claim_old_source"])
+        assert trace.exit_code == 0, trace.stdout
+        trace_payload = json.loads(trace.stdout)
+        assert (
+            trace_payload["retention_plan"][0]["retention_id"]
+            == candidates[0]["retention_id"]
+        )
 
 
 def test_retention_plan_uses_configured_retention_days(tmp_path: Path):
