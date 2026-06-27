@@ -451,7 +451,7 @@ def run_images_command(
     stride: int = typer.Option(112, "--stride", min=1, help="Grid stride in pixels."),
     config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
 ) -> None:
-    """Run image ingest through region proposal, visual evidence, and report."""
+    """Run image ingest through normalized region claims, graph export, and report."""
     config = load_config(config_path)
     _init_paths(config)
     if not image_path.exists():
@@ -459,15 +459,27 @@ def run_images_command(
     ingest_result = ingest_images(image_path, config)
     regions_created = 0
     evidence_created = 0
+    claims_created = 0
+    claims_accepted = 0
+    claims_normalized = 0
     for source_id in ingest_result.source_ids:
         region_result = propose_image_regions(config, source_id=source_id, patch_size=patch_size, stride=stride)
         evidence_result = build_image_evidence(config, source_id=source_id)
+        extract_result = extract_claims_from_spans(config, modality="image", source_id=source_id)
+        validation_result = validate_raw_claims(config, source_id=source_id)
+        normalization_result = normalize_claims(config, source_id=source_id)
         regions_created += region_result.created
         evidence_created += evidence_result.created
+        claims_created += extract_result.created
+        claims_accepted += validation_result.accepted
+        claims_normalized += normalization_result.created
+    graph_result = export_graph_jsonl(config)
     report_result = write_summary_report(config)
     typer.echo(
         f"sources_created={ingest_result.sources_created} images_created={ingest_result.images_created} "
         f"regions_created={regions_created} evidence_created={evidence_created} "
+        f"claims_created={claims_created} claims_accepted={claims_accepted} "
+        f"claims_normalized={claims_normalized} graph_edges={graph_result.edge_count} "
         f"report={report_result.output_path}"
     )
 
@@ -490,7 +502,7 @@ def validate_claims_command(
 
 @app.command("extract-claims")
 def extract_claims_command(
-    modality: str = typer.Option("all", "--modality", help="Modality to extract: all, chat, pdf, or audio."),
+    modality: str = typer.Option("all", "--modality", help="Modality to extract: all, chat, pdf, audio, or image."),
     source_id: Optional[str] = typer.Option(None, "--source-id", help="Only extract claims for this source."),
     config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
 ) -> None:

@@ -73,6 +73,10 @@ Image evidence pipeline:
 PYTHONPATH=src python3 -m evidence_pipeline ingest-images data/raw/images/
 PYTHONPATH=src python3 -m evidence_pipeline propose-image-regions --patch-size 224 --stride 112
 PYTHONPATH=src python3 -m evidence_pipeline build-image-evidence
+PYTHONPATH=src python3 -m evidence_pipeline extract-claims --modality image
+PYTHONPATH=src python3 -m evidence_pipeline validate-claims
+PYTHONPATH=src python3 -m evidence_pipeline normalize-claims
+PYTHONPATH=src python3 -m evidence_pipeline export-graph
 PYTHONPATH=src python3 -m evidence_pipeline report
 PYTHONPATH=src python3 -m evidence_pipeline validate-artifacts
 ```

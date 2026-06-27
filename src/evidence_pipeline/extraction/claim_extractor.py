@@ -12,6 +12,9 @@ from evidence_pipeline.schemas.spans import SpanRecord
 from evidence_pipeline.validation.text_support import contains_negation, contains_uncertainty
 
 RULE_EXTRACTOR_VERSION = "rules.v1"
+IMAGE_REGION_EXTRACTOR_VERSION = "image_region.rules.v1"
+SUPPORTED_MODALITIES = {"all", "chat", "pdf", "audio", "image"}
+TEXT_SPAN_MODALITIES = {"chat", "pdf", "audio"}
 
 
 @dataclass
@@ -128,13 +131,68 @@ def _raw_claim_from_span(span: SpanRecord, evidence: EvidenceRecord) -> RawClaim
     )
 
 
+def _raw_image_claim_from_evidence(evidence: EvidenceRecord) -> RawClaimRecord:
+    provenance = evidence.provenance
+    region_id = str(provenance.get("region_id") or evidence.evidence_id)
+    proposal_method = str(provenance.get("proposal_method") or "unknown_region_proposal")
+    proposal_score = provenance.get("proposal_score")
+    confidence = (
+        float(proposal_score)
+        if isinstance(proposal_score, (int, float)) and not isinstance(proposal_score, bool)
+        else 0.5
+    )
+
+    return RawClaimRecord(
+        claim_id=stable_id(
+            "claim_img",
+            {
+                "evidence_id": evidence.evidence_id,
+                "region_id": region_id,
+                "proposal_method": proposal_method,
+            },
+        ),
+        source_id=evidence.source_id,
+        source_modality="image",
+        span_id=None,
+        evidence_id=evidence.evidence_id,
+        claim_type="visual_region_proposal",
+        source_faithful_claim=f"Region {region_id} was proposed as a visual region by {proposal_method}.",
+        subject=region_id,
+        predicate="proposed_visual_region",
+        object={
+            "bbox": provenance.get("bbox"),
+            "crop_path": provenance.get("crop_path"),
+            "mask_path": provenance.get("mask_path"),
+        },
+        quantity=None,
+        attributes={
+            "extractor": IMAGE_REGION_EXTRACTOR_VERSION,
+            "proposal_method": proposal_method,
+        },
+        modality="model_observation",
+        evidence_text=None,
+        context_dependent=False,
+        context_used=None,
+        attribution={"type": "model", "agent": proposal_method},
+        truth_status="model_observation_unverified",
+        confidence=confidence,
+        model={
+            "provider": "deterministic",
+            "model": proposal_method,
+            "prompt_version": None,
+        },
+        support_status="raw_extracted",
+        risk_flags=evidence.risk_flags,
+    )
+
+
 def extract_claims_from_spans(
     config: PipelineConfig,
     modality: str = "all",
     source_id: Optional[str] = None,
 ) -> ClaimExtractionResult:
-    if modality not in {"all", "chat", "pdf", "audio"}:
-        raise ValueError("baseline extractor currently supports all, chat, pdf, or audio")
+    if modality not in SUPPORTED_MODALITIES:
+        raise ValueError("baseline extractor currently supports all, chat, pdf, audio, or image")
 
     paths = config.jsonl_paths()
     evidence_by_id = {
@@ -145,6 +203,22 @@ def extract_claims_from_spans(
     created = 0
     skipped = 0
 
+    if modality in {"all", "image"}:
+        for evidence in evidence_by_id.values():
+            if evidence.source_modality != "image" or evidence.evidence_type != "visual_region":
+                continue
+            if source_id is not None and evidence.source_id != source_id:
+                continue
+            record = _raw_image_claim_from_evidence(evidence)
+            if record.claim_id in existing_claim_ids:
+                skipped += 1
+                continue
+            append_jsonl(paths["claims_raw"], record)
+            existing_claim_ids.add(record.claim_id)
+            created += 1
+        if modality == "image":
+            return ClaimExtractionResult(created=created, skipped=skipped)
+
     for _, span in read_jsonl_records(paths["spans"], SpanRecord):
         if span.label != "claim_bearing":
             continue
@@ -152,7 +226,7 @@ def extract_claims_from_spans(
             continue
         if source_id is not None and span.source_id != source_id:
             continue
-        if span.source_modality not in {"chat", "pdf", "audio"}:
+        if span.source_modality not in TEXT_SPAN_MODALITIES:
             continue
         evidence = evidence_by_id.get(span.evidence_id)
         if evidence is None:

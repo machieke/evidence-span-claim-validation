@@ -19,6 +19,10 @@ def test_image_region_pipeline_is_idempotent(tmp_path: Path):
             ["ingest-images", "image.png"],
             ["propose-image-regions", "--patch-size", "16", "--stride", "16"],
             ["build-image-evidence"],
+            ["extract-claims", "--modality", "image"],
+            ["validate-claims"],
+            ["normalize-claims"],
+            ["export-graph"],
         ]
         for command in commands:
             first = runner.invoke(app, command)
@@ -45,6 +49,24 @@ def test_image_region_pipeline_is_idempotent(tmp_path: Path):
         assert all(record["source_modality"] == "image" for record in evidence)
         assert all(record["evidence_type"] == "visual_region" for record in evidence)
         assert all("text" not in record for record in evidence)
+
+        raw_claims = [payload for _, payload in read_jsonl(Path("data/jsonl/claims.raw.jsonl"))]
+        assert len(raw_claims) == 4
+        assert all(record["source_modality"] == "image" for record in raw_claims)
+        assert all(record["claim_type"] == "visual_region_proposal" for record in raw_claims)
+        assert all(record["modality"] == "model_observation" for record in raw_claims)
+        assert all(record["truth_status"] == "model_observation_unverified" for record in raw_claims)
+        assert all("evidence_text" not in record for record in raw_claims)
+
+        validated_claims = [payload for _, payload in read_jsonl(Path("data/jsonl/claims.validated.jsonl"))]
+        assert len(validated_claims) == 4
+        assert all(record["support_status"] == "accepted_extracted" for record in validated_claims)
+
+        normalized_claims = [payload for _, payload in read_jsonl(Path("data/jsonl/claims.normalized.jsonl"))]
+        assert len(normalized_claims) == 4
+
+        graph_edges = [payload for _, payload in read_jsonl(Path("data/reports/claim_graph.jsonl"))]
+        assert len(graph_edges) == 4
 
         report = runner.invoke(app, ["report"])
         assert report.exit_code == 0, report.stdout
