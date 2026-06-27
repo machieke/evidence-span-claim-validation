@@ -79,8 +79,8 @@ CANONICAL_WORK_DIRS = [
 ]
 
 EVIDENCE_MODALITIES = {"all", "chat", "pdf", "audio", "image"}
-TEXT_CHUNK_MODALITIES = {"all", "chat", "pdf", "audio"}
-TEXT_SPAN_MODALITIES = {"all", "chat", "pdf", "audio"}
+TEXT_CHUNK_MODALITIES = {"all", "chat", "pdf", "audio", "image"}
+TEXT_SPAN_MODALITIES = {"all", "chat", "pdf", "audio", "image"}
 
 
 def _parse_metadata(values: Optional[List[str]]) -> dict:
@@ -570,7 +570,7 @@ def build_evidence_command(
 
 @app.command("chunk")
 def chunk_command(
-    modality: str = typer.Option("all", "--modality", help="Modality to chunk: all, chat, pdf, or audio."),
+    modality: str = typer.Option("all", "--modality", help="Modality to chunk: all, chat, pdf, audio, or image."),
     source_id: Optional[str] = typer.Option(None, "--source-id", help="Only chunk this source."),
     previous_messages: int = typer.Option(2, "--previous-messages", min=0, help="Chat previous messages to include."),
     previous_utterances: int = typer.Option(1, "--previous-utterances", min=0, help="Audio previous utterances to include."),
@@ -603,12 +603,15 @@ def chunk_command(
             max_tokens=max_tokens,
         )
         outputs.append(f"audio_chunks_created={result.created} audio_chunks_skipped={result.skipped}")
+    if modality in {"all", "image"}:
+        result = chunk_image_ocr(config, source_id=source_id)
+        outputs.append(f"image_ocr_chunks_created={result.created} image_ocr_chunks_skipped={result.skipped}")
     typer.echo(" ".join(outputs))
 
 
 @app.command("detect-spans")
 def detect_spans_command(
-    modality: str = typer.Option("all", "--modality", help="Modality to detect: all, chat, pdf, or audio."),
+    modality: str = typer.Option("all", "--modality", help="Modality to detect: all, chat, pdf, audio, or image."),
     source_id: Optional[str] = typer.Option(None, "--source-id", help="Only detect spans for this source."),
     config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
 ) -> None:
@@ -626,6 +629,9 @@ def detect_spans_command(
     if modality in {"all", "audio"}:
         result = detect_audio_spans(config, source_id=source_id)
         outputs.append(f"audio_spans_created={result.created} audio_spans_skipped={result.skipped}")
+    if modality in {"all", "image"}:
+        result = detect_image_ocr_spans(config, source_id=source_id)
+        outputs.append(f"image_ocr_spans_created={result.created} image_ocr_spans_skipped={result.skipped}")
     typer.echo(" ".join(outputs))
 
 
