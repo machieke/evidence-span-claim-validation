@@ -10,6 +10,8 @@ jsonl:
   chat_messages: chat_messages.jsonl
   pdf_blocks: pdf_blocks.jsonl
   audio_utterances: audio_utterances.jsonl
+  images: images.jsonl
+  image_regions: image_regions.jsonl
   evidence: evidence.jsonl
   chunks: chunks.jsonl
   spans: spans.jsonl

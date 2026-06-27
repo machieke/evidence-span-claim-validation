@@ -20,6 +20,8 @@ class JSONLConfig(BaseModel):
     chat_messages: str = "chat_messages.jsonl"
     pdf_blocks: str = "pdf_blocks.jsonl"
     audio_utterances: str = "audio_utterances.jsonl"
+    images: str = "images.jsonl"
+    image_regions: str = "image_regions.jsonl"
     evidence: str = "evidence.jsonl"
     chunks: str = "chunks.jsonl"
     spans: str = "spans.jsonl"

@@ -4,6 +4,7 @@ from evidence_pipeline.schemas.chat import ChatMessageRecord
 from evidence_pipeline.schemas.chunks import ChunkRecord
 from evidence_pipeline.schemas.claims import NormalizedClaimRecord, RawClaimRecord, ValidatedClaimRecord
 from evidence_pipeline.schemas.evidence import EvidenceRecord
+from evidence_pipeline.schemas.image import ImageRecord, ImageRegionRecord
 from evidence_pipeline.schemas.pdf import PDFBlockRecord
 from evidence_pipeline.schemas.sources import SourceRecord
 from evidence_pipeline.schemas.spans import SpanRecord
@@ -21,6 +22,11 @@ SCHEMA_REGISTRY = {
     "audio_utterance": AudioUtteranceRecord,
     "audio-utterance": AudioUtteranceRecord,
     "audio_utterances": AudioUtteranceRecord,
+    "image": ImageRecord,
+    "images": ImageRecord,
+    "image_region": ImageRegionRecord,
+    "image-region": ImageRegionRecord,
+    "image_regions": ImageRegionRecord,
     "evidence": EvidenceRecord,
     "chunk": ChunkRecord,
     "chunks": ChunkRecord,
@@ -48,6 +54,8 @@ __all__ = [
     "AudioUtteranceRecord",
     "ErrorRecord",
     "EvidenceRecord",
+    "ImageRecord",
+    "ImageRegionRecord",
     "NormalizedClaimRecord",
     "PDFBlockRecord",
     "QuarantineRecord",

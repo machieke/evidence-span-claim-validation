@@ -16,6 +16,8 @@ from evidence_pipeline.ingest.chat import ingest_chat_export
 from evidence_pipeline.ingest.chat_evidence import build_chat_evidence
 from evidence_pipeline.ingest.audio import ingest_audio_transcript
 from evidence_pipeline.ingest.audio_evidence import build_audio_evidence
+from evidence_pipeline.ingest.image import ingest_images
+from evidence_pipeline.ingest.image_evidence import build_image_evidence
 from evidence_pipeline.ingest.pdf import ingest_pdf
 from evidence_pipeline.ingest.pdf_evidence import build_pdf_evidence
 from evidence_pipeline.ids import sha256_file, stable_id
@@ -23,6 +25,7 @@ from evidence_pipeline.jsonl import JSONLDecodeError, append_jsonl, find_record,
 from evidence_pipeline.normalization.claims import normalize_claims
 from evidence_pipeline.reports.summary import write_summary_report
 from evidence_pipeline.schemas import SCHEMA_REGISTRY, EvidenceRecord, SourceModality, SourceRecord
+from evidence_pipeline.spans.image_region_selector import propose_image_regions
 from evidence_pipeline.spans.rule_highlighter import detect_audio_spans, detect_chat_spans, detect_pdf_spans
 from evidence_pipeline.validation.deterministic import validate_raw_claims
 
@@ -302,6 +305,50 @@ def detect_audio_spans_command(
     typer.echo(f"spans_created={result.created} spans_skipped={result.skipped}")
 
 
+@app.command("ingest-images")
+def ingest_images_command(
+    image_path: Path = typer.Argument(..., help="Image file or directory to ingest."),
+    metadata: Optional[List[str]] = typer.Option(None, "--metadata", "-m", help="Metadata as KEY=VALUE."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Ingest image metadata into sources.jsonl and images.jsonl."""
+    config = load_config(config_path)
+    _init_paths(config)
+    if not image_path.exists():
+        raise typer.BadParameter(f"image path does not exist: {image_path}")
+    result = ingest_images(image_path, config, metadata=_parse_metadata(metadata))
+    typer.echo(
+        f"sources_created={result.sources_created} images_created={result.images_created} "
+        f"images_skipped={result.images_skipped}"
+    )
+
+
+@app.command("propose-image-regions")
+def propose_image_regions_command(
+    source_id: Optional[str] = typer.Option(None, "--source-id", help="Only propose regions for this source."),
+    patch_size: int = typer.Option(224, "--patch-size", min=1, help="Grid patch size in pixels."),
+    stride: int = typer.Option(112, "--stride", min=1, help="Grid stride in pixels."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Propose grid patch image regions and persist crop files."""
+    config = load_config(config_path)
+    _init_paths(config)
+    result = propose_image_regions(config, source_id=source_id, patch_size=patch_size, stride=stride)
+    typer.echo(f"regions_created={result.created} regions_skipped={result.skipped}")
+
+
+@app.command("build-image-evidence")
+def build_image_evidence_command(
+    source_id: Optional[str] = typer.Option(None, "--source-id", help="Only build evidence for this source."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Create visual_region evidence records from image_regions.jsonl."""
+    config = load_config(config_path)
+    _init_paths(config)
+    result = build_image_evidence(config, source_id=source_id)
+    typer.echo(f"evidence_created={result.created} evidence_skipped={result.skipped}")
+
+
 @app.command("validate-claims")
 def validate_claims_command(
     source_id: Optional[str] = typer.Option(None, "--source-id", help="Only validate claims for this source."),
@@ -398,6 +445,8 @@ def validate_artifacts(
         "chat_messages": "chat_message",
         "pdf_blocks": "pdf_block",
         "audio_utterances": "audio_utterance",
+        "images": "image",
+        "image_regions": "image_region",
         "evidence": "evidence",
         "chunks": "chunk",
         "spans": "span",

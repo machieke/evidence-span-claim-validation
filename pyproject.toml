@@ -9,6 +9,7 @@ description = "Evidence-anchored claim extraction and validation pipeline founda
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
+  "Pillow>=7.0",
   "PyMuPDF>=1.24",
   "pydantic>=2.0",
   "pypdf>=5.0",

@@ -60,6 +60,16 @@ PYTHONPATH=src python3 -m evidence_pipeline report
 PYTHONPATH=src python3 -m evidence_pipeline validate-artifacts
 ```
 
+Image evidence pipeline:
+
+```bash
+PYTHONPATH=src python3 -m evidence_pipeline ingest-images data/raw/images/
+PYTHONPATH=src python3 -m evidence_pipeline propose-image-regions --patch-size 224 --stride 112
+PYTHONPATH=src python3 -m evidence_pipeline build-image-evidence
+PYTHONPATH=src python3 -m evidence_pipeline report
+PYTHONPATH=src python3 -m evidence_pipeline validate-artifacts
+```
+
 During local development:
 
 ```bash
