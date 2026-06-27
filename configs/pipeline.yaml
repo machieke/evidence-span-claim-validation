@@ -22,5 +22,16 @@ jsonl:
   claims_validated: claims.validated.jsonl
   claims_normalized: claims.normalized.jsonl
   review_decisions: review_decisions.jsonl
+  audit_events: audit_events.jsonl
   errors: errors.jsonl
   quarantine: quarantine.jsonl
+
+privacy:
+  local_only_sensitive_sources: true
+  sensitive_metadata_keys:
+    - sensitive
+    - contains_pii
+    - local_only
+  local_model_providers:
+    - deterministic
+    - local

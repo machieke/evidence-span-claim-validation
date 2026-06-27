@@ -40,6 +40,7 @@ from evidence_pipeline.spans.image_region_selector import propose_image_regions
 from evidence_pipeline.spans.rule_highlighter import detect_audio_spans, detect_chat_spans, detect_pdf_spans
 from evidence_pipeline.validation.deterministic import validate_raw_claims
 from evidence_pipeline.validation.pii import detect_pii, redact_pii
+from evidence_pipeline.validation.privacy import check_privacy_policy
 from evidence_pipeline.validation.repair import suggest_evidence_repairs
 from evidence_pipeline.validation.review import record_claim_review
 
@@ -920,6 +921,28 @@ def redact_pii_command(
     except ValueError as exc:
         raise typer.BadParameter(str(exc))
     typer.echo(f"{result.output_path} records={result.records_written} replacements={result.replacement_count}")
+
+
+@app.command("check-privacy")
+def check_privacy_command(
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Privacy violation JSONL output path."),
+    fail_on_violation: bool = typer.Option(
+        True,
+        "--fail-on-violation/--report-only",
+        help="Exit non-zero when privacy policy violations are found.",
+    ),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Check local-only privacy policy for sensitive sources."""
+    config = load_config(config_path)
+    _init_paths(config)
+    result = check_privacy_policy(config, output_path=output)
+    typer.echo(
+        f"{result.output_path} claims_checked={result.claims_checked} "
+        f"violations={result.violation_count}"
+    )
+    if fail_on_violation and result.violation_count:
+        raise typer.Exit(code=1)
 
 
 @app.command("validate-jsonl")

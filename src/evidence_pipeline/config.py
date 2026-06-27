@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List
 
 import yaml
 from pydantic import BaseModel, Field
@@ -37,9 +37,18 @@ class JSONLConfig(BaseModel):
     quarantine: str = "quarantine.jsonl"
 
 
+class PrivacyConfig(BaseModel):
+    local_only_sensitive_sources: bool = True
+    sensitive_metadata_keys: List[str] = Field(
+        default_factory=lambda: ["sensitive", "contains_pii", "local_only"]
+    )
+    local_model_providers: List[str] = Field(default_factory=lambda: ["deterministic", "local"])
+
+
 class PipelineConfig(BaseModel):
     paths: PathConfig = Field(default_factory=PathConfig)
     jsonl: JSONLConfig = Field(default_factory=JSONLConfig)
+    privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)
 
     def jsonl_paths(self) -> Dict[str, Path]:
         return {
