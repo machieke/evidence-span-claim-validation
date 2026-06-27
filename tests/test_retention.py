@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -60,3 +60,47 @@ def test_retention_plan_reports_old_raw_sources_without_deleting(tmp_path: Path)
         assert "| retention_plan | 1 |" in report_text
         assert "## Retention Plan Reasons" in report_text
         assert "| raw_source_retention_exceeded | 1 |" in report_text
+
+
+def test_retention_plan_uses_configured_retention_days(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        init = runner.invoke(app, ["init"])
+        assert init.exit_code == 0
+
+        Path("pipeline.yaml").write_text(
+            """
+retention:
+  raw_source_retention_days: 30
+""",
+            encoding="utf-8",
+        )
+        current_time = datetime.now(timezone.utc)
+        append_jsonl(
+            Path("data/jsonl/sources.jsonl"),
+            SourceRecord(
+                source_id="src_expired",
+                source_modality="chat",
+                source_file="expired.json",
+                ingested_at=current_time - timedelta(days=31),
+            ),
+        )
+        append_jsonl(
+            Path("data/jsonl/sources.jsonl"),
+            SourceRecord(
+                source_id="src_recent",
+                source_modality="chat",
+                source_file="recent.json",
+                ingested_at=current_time - timedelta(days=29),
+            ),
+        )
+
+        result = runner.invoke(app, ["retention-plan", "--config", "pipeline.yaml"])
+
+        assert result.exit_code == 0, result.stdout
+        assert "candidates=1" in result.stdout
+        candidates = [
+            payload
+            for _, payload in read_jsonl(Path("data/reports/retention_plan.jsonl"))
+        ]
+        assert [candidate["source_id"] for candidate in candidates] == ["src_expired"]
+        assert candidates[0]["retention_days"] == 30
