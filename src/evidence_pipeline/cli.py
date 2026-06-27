@@ -29,6 +29,7 @@ from evidence_pipeline.normalization.graph_export import export_graph_jsonl
 from evidence_pipeline.reports.summary import write_summary_report
 from evidence_pipeline.reports.gold_eval import write_gold_eval_report
 from evidence_pipeline.reports.lineage import trace_claim, write_claim_trace
+from evidence_pipeline.reports.sqlite_export import export_sqlite
 from evidence_pipeline.schemas import SCHEMA_REGISTRY, EvidenceRecord, SourceModality, SourceRecord
 from evidence_pipeline.spans.image_region_clusterer import (
     build_image_region_embeddings,
@@ -770,6 +771,21 @@ def export_graph_command(
     _init_paths(config)
     result = export_graph_jsonl(config, output_path=output)
     typer.echo(f"{result.output_path} edges={result.edge_count}")
+
+
+@app.command("export-sqlite")
+def export_sqlite_command(
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="SQLite output path."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Export configured JSONL artifacts into SQLite tables."""
+    config = load_config(config_path)
+    _init_paths(config)
+    result = export_sqlite(config, output_path=output)
+    typer.echo(
+        f"{result.output_path} tables={len(result.table_counts)} "
+        f"records={sum(result.table_counts.values())}"
+    )
 
 
 @app.command("eval-gold")
