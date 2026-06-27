@@ -22,6 +22,8 @@ class JSONLConfig(BaseModel):
     audio_utterances: str = "audio_utterances.jsonl"
     images: str = "images.jsonl"
     image_regions: str = "image_regions.jsonl"
+    image_region_embeddings: str = "image_region_embeddings.jsonl"
+    image_feature_clusters: str = "image_feature_clusters.jsonl"
     evidence: str = "evidence.jsonl"
     chunks: str = "chunks.jsonl"
     spans: str = "spans.jsonl"

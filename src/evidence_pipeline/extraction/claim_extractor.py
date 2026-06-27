@@ -13,6 +13,7 @@ from evidence_pipeline.validation.text_support import contains_negation, contain
 
 RULE_EXTRACTOR_VERSION = "rules.v1"
 IMAGE_REGION_EXTRACTOR_VERSION = "image_region.rules.v1"
+IMAGE_CLUSTER_EXTRACTOR_VERSION = "image_cluster.rules.v1"
 SUPPORTED_MODALITIES = {"all", "chat", "pdf", "audio", "image"}
 TEXT_SPAN_MODALITIES = {"chat", "pdf", "audio"}
 
@@ -186,6 +187,71 @@ def _raw_image_claim_from_evidence(evidence: EvidenceRecord) -> RawClaimRecord:
     )
 
 
+def _raw_image_cluster_claim_from_evidence(evidence: EvidenceRecord) -> RawClaimRecord:
+    provenance = evidence.provenance
+    feature_cluster_id = str(provenance.get("feature_cluster_id") or evidence.evidence_id)
+    embedding_model = str(provenance.get("embedding_model") or "unknown_embedding_model")
+    clustering_method = str(provenance.get("clustering_method") or "unknown_clustering_method")
+    raw_member_region_ids = provenance.get("member_region_ids") or []
+    if isinstance(raw_member_region_ids, list):
+        member_region_ids = [str(region_id) for region_id in raw_member_region_ids]
+    else:
+        member_region_ids = [str(raw_member_region_ids)]
+    cohesion_score = provenance.get("cohesion_score")
+    confidence = (
+        float(cohesion_score)
+        if isinstance(cohesion_score, (int, float)) and not isinstance(cohesion_score, bool)
+        else 0.5
+    )
+    agent = f"{embedding_model}+{clustering_method}"
+
+    return RawClaimRecord(
+        claim_id=stable_id(
+            "claim_vf",
+            {
+                "evidence_id": evidence.evidence_id,
+                "feature_cluster_id": feature_cluster_id,
+                "embedding_model": embedding_model,
+                "clustering_method": clustering_method,
+            },
+        ),
+        source_id=evidence.source_id,
+        source_modality="image",
+        span_id=None,
+        evidence_id=evidence.evidence_id,
+        claim_type="unnamed_visual_feature_cluster",
+        source_faithful_claim=(
+            f"Regions {', '.join(member_region_ids)} were clustered as visually similar under {embedding_model}."
+        ),
+        subject=feature_cluster_id,
+        predicate="has_member_regions",
+        object=member_region_ids,
+        quantity=None,
+        attributes={
+            "extractor": IMAGE_CLUSTER_EXTRACTOR_VERSION,
+            "embedding_model": embedding_model,
+            "clustering_method": clustering_method,
+            "cohesion_score": cohesion_score,
+            "nearest_neighbor_margin": provenance.get("nearest_neighbor_margin"),
+            "representative_region_ids": provenance.get("representative_region_ids"),
+        },
+        modality="model_observation",
+        evidence_text=None,
+        context_dependent=False,
+        context_used=None,
+        attribution={"type": "model", "agent": agent},
+        truth_status="model_observation_unverified",
+        confidence=confidence,
+        model={
+            "provider": "deterministic",
+            "model": agent,
+            "prompt_version": None,
+        },
+        support_status="raw_extracted",
+        risk_flags=evidence.risk_flags,
+    )
+
+
 def extract_claims_from_spans(
     config: PipelineConfig,
     modality: str = "all",
@@ -205,11 +271,17 @@ def extract_claims_from_spans(
 
     if modality in {"all", "image"}:
         for evidence in evidence_by_id.values():
-            if evidence.source_modality != "image" or evidence.evidence_type != "visual_region":
+            if evidence.source_modality != "image" or evidence.evidence_type not in {
+                "visual_region",
+                "visual_cluster",
+            }:
                 continue
             if source_id is not None and evidence.source_id != source_id:
                 continue
-            record = _raw_image_claim_from_evidence(evidence)
+            if evidence.evidence_type == "visual_cluster":
+                record = _raw_image_cluster_claim_from_evidence(evidence)
+            else:
+                record = _raw_image_claim_from_evidence(evidence)
             if record.claim_id in existing_claim_ids:
                 skipped += 1
                 continue

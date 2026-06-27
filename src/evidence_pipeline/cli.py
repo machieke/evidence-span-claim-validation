@@ -17,7 +17,7 @@ from evidence_pipeline.ingest.chat_evidence import build_chat_evidence
 from evidence_pipeline.ingest.audio import ingest_audio_transcript
 from evidence_pipeline.ingest.audio_evidence import build_audio_evidence
 from evidence_pipeline.ingest.image import ingest_images
-from evidence_pipeline.ingest.image_evidence import build_image_evidence
+from evidence_pipeline.ingest.image_evidence import build_image_cluster_evidence, build_image_evidence
 from evidence_pipeline.ingest.pdf import ingest_pdf
 from evidence_pipeline.ingest.pdf_evidence import build_pdf_evidence
 from evidence_pipeline.ids import sha256_file, stable_id
@@ -29,6 +29,10 @@ from evidence_pipeline.reports.summary import write_summary_report
 from evidence_pipeline.reports.gold_eval import write_gold_eval_report
 from evidence_pipeline.reports.lineage import trace_claim, write_claim_trace
 from evidence_pipeline.schemas import SCHEMA_REGISTRY, EvidenceRecord, SourceModality, SourceRecord
+from evidence_pipeline.spans.image_region_clusterer import (
+    build_image_region_embeddings,
+    cluster_image_regions,
+)
 from evidence_pipeline.spans.image_region_selector import propose_image_regions
 from evidence_pipeline.spans.rule_highlighter import detect_audio_spans, detect_chat_spans, detect_pdf_spans
 from evidence_pipeline.validation.deterministic import validate_raw_claims
@@ -354,6 +358,68 @@ def build_image_evidence_command(
     typer.echo(f"evidence_created={result.created} evidence_skipped={result.skipped}")
 
 
+@app.command("embed-image-regions")
+def embed_image_regions_command(
+    source_id: Optional[str] = typer.Option(None, "--source-id", help="Only embed regions for this source."),
+    embedding_model: str = typer.Option(
+        "color_rgb_mean_std_v1",
+        "--embedding-model",
+        help="Embedding model identifier.",
+    ),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Create deterministic image-region embedding records."""
+    config = load_config(config_path)
+    _init_paths(config)
+    result = build_image_region_embeddings(config, source_id=source_id, embedding_model=embedding_model)
+    typer.echo(f"embeddings_created={result.created} embeddings_skipped={result.skipped}")
+
+
+@app.command("cluster-image-regions")
+def cluster_image_regions_command(
+    source_id: Optional[str] = typer.Option(None, "--source-id", help="Only cluster regions for this source."),
+    embedding_model: str = typer.Option(
+        "color_rgb_mean_std_v1",
+        "--embedding-model",
+        help="Embedding model identifier.",
+    ),
+    distance_threshold: float = typer.Option(
+        0.08,
+        "--distance-threshold",
+        min=0.0,
+        help="Maximum embedding distance for connected regions.",
+    ),
+    min_cluster_size: int = typer.Option(2, "--min-cluster-size", min=1, help="Minimum regions per cluster."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Cluster image regions using deterministic embedding distances."""
+    config = load_config(config_path)
+    _init_paths(config)
+    result = cluster_image_regions(
+        config,
+        source_id=source_id,
+        embedding_model=embedding_model,
+        distance_threshold=distance_threshold,
+        min_cluster_size=min_cluster_size,
+    )
+    typer.echo(
+        f"clusters_created={result.created} clusters_skipped={result.skipped} "
+        f"clustered_regions={result.clustered_regions}"
+    )
+
+
+@app.command("build-image-cluster-evidence")
+def build_image_cluster_evidence_command(
+    source_id: Optional[str] = typer.Option(None, "--source-id", help="Only build cluster evidence for this source."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Create visual_cluster evidence records from image feature clusters."""
+    config = load_config(config_path)
+    _init_paths(config)
+    result = build_image_cluster_evidence(config, source_id=source_id)
+    typer.echo(f"evidence_created={result.created} evidence_skipped={result.skipped}")
+
+
 @app.command("run-chat")
 def run_chat_command(
     chat_export: Path = typer.Argument(..., help="Chat export JSON file."),
@@ -449,6 +515,13 @@ def run_images_command(
     image_path: Path = typer.Argument(..., help="Image file or directory to ingest."),
     patch_size: int = typer.Option(224, "--patch-size", min=1, help="Grid patch size in pixels."),
     stride: int = typer.Option(112, "--stride", min=1, help="Grid stride in pixels."),
+    distance_threshold: float = typer.Option(
+        0.08,
+        "--cluster-distance-threshold",
+        min=0.0,
+        help="Maximum embedding distance for cluster membership.",
+    ),
+    min_cluster_size: int = typer.Option(2, "--min-cluster-size", min=1, help="Minimum regions per cluster."),
     config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
 ) -> None:
     """Run image ingest through normalized region claims, graph export, and report."""
@@ -459,17 +532,29 @@ def run_images_command(
     ingest_result = ingest_images(image_path, config)
     regions_created = 0
     evidence_created = 0
+    embeddings_created = 0
+    clusters_created = 0
     claims_created = 0
     claims_accepted = 0
     claims_normalized = 0
     for source_id in ingest_result.source_ids:
         region_result = propose_image_regions(config, source_id=source_id, patch_size=patch_size, stride=stride)
         evidence_result = build_image_evidence(config, source_id=source_id)
+        embedding_result = build_image_region_embeddings(config, source_id=source_id)
+        cluster_result = cluster_image_regions(
+            config,
+            source_id=source_id,
+            distance_threshold=distance_threshold,
+            min_cluster_size=min_cluster_size,
+        )
+        cluster_evidence_result = build_image_cluster_evidence(config, source_id=source_id)
         extract_result = extract_claims_from_spans(config, modality="image", source_id=source_id)
         validation_result = validate_raw_claims(config, source_id=source_id)
         normalization_result = normalize_claims(config, source_id=source_id)
         regions_created += region_result.created
-        evidence_created += evidence_result.created
+        evidence_created += evidence_result.created + cluster_evidence_result.created
+        embeddings_created += embedding_result.created
+        clusters_created += cluster_result.created
         claims_created += extract_result.created
         claims_accepted += validation_result.accepted
         claims_normalized += normalization_result.created
@@ -478,6 +563,7 @@ def run_images_command(
     typer.echo(
         f"sources_created={ingest_result.sources_created} images_created={ingest_result.images_created} "
         f"regions_created={regions_created} evidence_created={evidence_created} "
+        f"embeddings_created={embeddings_created} clusters_created={clusters_created} "
         f"claims_created={claims_created} claims_accepted={claims_accepted} "
         f"claims_normalized={claims_normalized} graph_edges={graph_result.edge_count} "
         f"report={report_result.output_path}"
@@ -659,6 +745,8 @@ def validate_artifacts(
         "audio_utterances": "audio_utterance",
         "images": "image",
         "image_regions": "image_region",
+        "image_region_embeddings": "image_region_embedding",
+        "image_feature_clusters": "image_feature_cluster",
         "evidence": "evidence",
         "chunks": "chunk",
         "spans": "span",

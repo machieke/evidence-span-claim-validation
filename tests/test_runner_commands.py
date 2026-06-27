@@ -61,10 +61,16 @@ def test_run_images_is_idempotent(tmp_path: Path):
         assert second.exit_code == 0, second.stdout
         assert "images_created=1" in first.stdout
         assert "images_created=0" in second.stdout
+        assert "embeddings_created=1" in first.stdout
+        assert "embeddings_created=0" in second.stdout
+        assert "clusters_created=0" in first.stdout
+        assert "clusters_created=0" in second.stdout
         assert "claims_created=1" in first.stdout
         assert "claims_created=0" in second.stdout
         assert len(list(read_jsonl(Path("data/jsonl/images.jsonl")))) == 1
         assert len(list(read_jsonl(Path("data/jsonl/image_regions.jsonl")))) == 1
+        assert len(list(read_jsonl(Path("data/jsonl/image_region_embeddings.jsonl")))) == 1
+        assert len(list(read_jsonl(Path("data/jsonl/image_feature_clusters.jsonl")))) == 0
         assert len(list(read_jsonl(Path("data/jsonl/evidence.jsonl")))) == 1
         assert len(list(read_jsonl(Path("data/jsonl/claims.raw.jsonl")))) == 1
         assert len(list(read_jsonl(Path("data/jsonl/claims.validated.jsonl")))) == 1

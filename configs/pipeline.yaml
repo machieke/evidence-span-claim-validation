@@ -12,6 +12,8 @@ jsonl:
   audio_utterances: audio_utterances.jsonl
   images: images.jsonl
   image_regions: image_regions.jsonl
+  image_region_embeddings: image_region_embeddings.jsonl
+  image_feature_clusters: image_feature_clusters.jsonl
   evidence: evidence.jsonl
   chunks: chunks.jsonl
   spans: spans.jsonl

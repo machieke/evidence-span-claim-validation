@@ -4,7 +4,12 @@ from evidence_pipeline.schemas.chat import ChatMessageRecord
 from evidence_pipeline.schemas.chunks import ChunkRecord
 from evidence_pipeline.schemas.claims import NormalizedClaimRecord, RawClaimRecord, ValidatedClaimRecord
 from evidence_pipeline.schemas.evidence import EvidenceRecord
-from evidence_pipeline.schemas.image import ImageRecord, ImageRegionRecord
+from evidence_pipeline.schemas.image import (
+    ImageFeatureClusterRecord,
+    ImageRecord,
+    ImageRegionEmbeddingRecord,
+    ImageRegionRecord,
+)
 from evidence_pipeline.schemas.pdf import PDFBlockRecord
 from evidence_pipeline.schemas.sources import SourceRecord
 from evidence_pipeline.schemas.spans import SpanRecord
@@ -27,6 +32,12 @@ SCHEMA_REGISTRY = {
     "image_region": ImageRegionRecord,
     "image-region": ImageRegionRecord,
     "image_regions": ImageRegionRecord,
+    "image_region_embedding": ImageRegionEmbeddingRecord,
+    "image-region-embedding": ImageRegionEmbeddingRecord,
+    "image_region_embeddings": ImageRegionEmbeddingRecord,
+    "image_feature_cluster": ImageFeatureClusterRecord,
+    "image-feature-cluster": ImageFeatureClusterRecord,
+    "image_feature_clusters": ImageFeatureClusterRecord,
     "evidence": EvidenceRecord,
     "chunk": ChunkRecord,
     "chunks": ChunkRecord,
@@ -54,7 +65,9 @@ __all__ = [
     "AudioUtteranceRecord",
     "ErrorRecord",
     "EvidenceRecord",
+    "ImageFeatureClusterRecord",
     "ImageRecord",
+    "ImageRegionEmbeddingRecord",
     "ImageRegionRecord",
     "NormalizedClaimRecord",
     "PDFBlockRecord",
