@@ -52,6 +52,7 @@ _COMMON_ENTITY_FALSE_POSITIVES = {
     "They",
     "He",
     "She",
+    "OCR",
     "Monday",
     "Tuesday",
     "Wednesday",

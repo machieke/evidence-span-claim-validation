@@ -167,6 +167,8 @@ def validate_claim_deterministically(
     )
     if introduced_entities:
         warnings.append("unsupported_entities_introduced")
+        if requires_exact_evidence:
+            errors.append("unsupported_entities_introduced")
 
     summary = ClaimValidationSummary(
         deterministic_valid=not errors,
@@ -272,7 +274,10 @@ def validate_raw_claims(
                 errors=decision.errors,
                 warnings=decision.warnings,
                 validator_version=VALIDATOR_VERSION,
-                metadata={"source_modality": claim.source_modality},
+                metadata={
+                    "source_modality": claim.source_modality,
+                    "validation": decision.summary.model_dump(mode="json"),
+                },
             ),
         )
         existing_validation_ids.add(validation_id)

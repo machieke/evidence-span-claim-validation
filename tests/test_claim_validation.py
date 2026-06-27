@@ -105,3 +105,72 @@ def test_validate_claims_writes_accepted_validation_and_quarantine(tmp_path: Pat
 
         artifact_check = runner.invoke(app, ["validate-artifacts"])
         assert artifact_check.exit_code == 0, artifact_check.stdout
+
+
+def test_validate_claims_quarantines_unsupported_named_entities(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        init = runner.invoke(app, ["init"])
+        assert init.exit_code == 0
+
+        evidence = EvidenceRecord(
+            evidence_id="ev_msg_1",
+            source_id="src_chat_1",
+            source_modality="chat",
+            evidence_type="message_span",
+            text="Hope had three masts.",
+            provenance={
+                "conversation_id": "conv_1",
+                "message_id": "msg_1",
+                "sender_id": "user_b",
+                "sender_display_name": "Bob",
+                "char_start": 0,
+                "char_end": 21,
+            },
+        )
+        span = SpanRecord(
+            span_id="span_1",
+            chunk_id="chunk_1",
+            source_id="src_chat_1",
+            source_modality="chat",
+            evidence_id="ev_msg_1",
+            text="Hope had three masts.",
+            char_start=0,
+            char_end=21,
+            label="claim_bearing",
+            score=0.8,
+        )
+        claim = RawClaimRecord(
+            claim_id="claim_introduced_entity",
+            source_id="src_chat_1",
+            source_modality="chat",
+            span_id="span_1",
+            evidence_id="ev_msg_1",
+            source_faithful_claim="The speaker asserted that Hope had three masts near Boston.",
+            subject="Hope",
+            predicate="had",
+            object="three masts near Boston",
+            modality="asserted",
+            evidence_text="Hope had three masts.",
+            attribution={"type": "speaker", "agent": "user_b"},
+            truth_status="speaker_asserted_unverified",
+            confidence=0.9,
+        )
+
+        append_jsonl(Path("data/jsonl/evidence.jsonl"), evidence)
+        append_jsonl(Path("data/jsonl/spans.jsonl"), span)
+        append_jsonl(Path("data/jsonl/claims.raw.jsonl"), claim)
+
+        result = runner.invoke(app, ["validate-claims"])
+
+        assert result.exit_code == 0, result.stdout
+        assert "claims_accepted=0" in result.stdout
+        assert "claims_quarantined=1" in result.stdout
+
+        validations = [payload for _, payload in read_jsonl(Path("data/jsonl/validations.jsonl"))]
+        quarantined = [payload for _, payload in read_jsonl(Path("data/jsonl/quarantine.jsonl"))]
+
+        assert validations[0]["errors"] == ["unsupported_entities_introduced"]
+        assert validations[0]["warnings"] == ["unsupported_entities_introduced"]
+        assert validations[0]["metadata"]["validation"]["introduced_entities"] == ["Boston"]
+        assert quarantined[0]["reason_codes"] == ["unsupported_entities_introduced"]
+        assert quarantined[0]["warnings"] == ["unsupported_entities_introduced"]
