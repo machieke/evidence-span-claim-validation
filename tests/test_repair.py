@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -69,3 +70,8 @@ def test_repair_claims_suggests_exact_evidence_text(tmp_path: Path):
         report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
         assert "| Evidence repair suggestion rate | 100.0% |" in report_text
         assert "| Evidence repair suggestions | 1 |" in report_text
+
+        trace = runner.invoke(app, ["trace-claim", "claim_1"])
+        assert trace.exit_code == 0, trace.stdout
+        trace_payload = json.loads(trace.stdout)
+        assert trace_payload["repair_suggestions"][0]["repair_id"] == suggestions[0]["repair_id"]

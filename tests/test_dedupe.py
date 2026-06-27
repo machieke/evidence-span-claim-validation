@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -48,6 +49,11 @@ def test_dedupe_claims_groups_duplicate_normalized_claims(tmp_path: Path):
         assert len(groups) == 1
         assert groups[0]["member_count"] == 2
         assert groups[0]["member_claim_ids"] == ["claim_1", "claim_2"]
+
+        trace = runner.invoke(app, ["trace-claim", "claim_1"])
+        assert trace.exit_code == 0, trace.stdout
+        trace_payload = json.loads(trace.stdout)
+        assert trace_payload["duplicate_groups"][0]["dedupe_id"] == groups[0]["dedupe_id"]
 
 
 def test_dedupe_claims_groups_cross_source_normalized_propositions(tmp_path: Path):
