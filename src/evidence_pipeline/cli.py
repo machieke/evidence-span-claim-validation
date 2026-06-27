@@ -26,6 +26,7 @@ from evidence_pipeline.normalization.claims import normalize_claims
 from evidence_pipeline.normalization.graph_export import export_graph_jsonl
 from evidence_pipeline.reports.summary import write_summary_report
 from evidence_pipeline.reports.gold_eval import write_gold_eval_report
+from evidence_pipeline.reports.lineage import trace_claim, write_claim_trace
 from evidence_pipeline.schemas import SCHEMA_REGISTRY, EvidenceRecord, SourceModality, SourceRecord
 from evidence_pipeline.spans.image_region_selector import propose_image_regions
 from evidence_pipeline.spans.rule_highlighter import detect_audio_spans, detect_chat_spans, detect_pdf_spans
@@ -560,6 +561,22 @@ def eval_gold_command(
         f"{result.output_path} accepted_precision={result.metrics['accepted_precision']} "
         f"accepted_recall={result.metrics['accepted_recall']}"
     )
+
+
+@app.command("trace-claim")
+def trace_claim_command(
+    claim_id: str = typer.Argument(..., help="Claim ID to trace."),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Optional JSON output path."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Trace a claim back through source, evidence, span, validation, and normalization artifacts."""
+    config = load_config(config_path)
+    _init_paths(config)
+    if output is not None:
+        trace = write_claim_trace(config, claim_id, output)
+        typer.echo(f"{output} found={trace['found']}")
+        return
+    typer.echo(json.dumps(trace_claim(config, claim_id), indent=2, sort_keys=True))
 
 
 @app.command("validate-jsonl")

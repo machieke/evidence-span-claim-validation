@@ -78,9 +78,18 @@ def test_chat_pipeline_is_idempotent(tmp_path: Path):
         ]
         assert "question_speech_act" in spans[0]["risk_flags"]
         assert "context_dependent_coreference" in spans[2]["risk_flags"]
-        assert len(list(read_jsonl(Path("data/jsonl/claims.raw.jsonl")))) == 3
+        raw_claims = [payload for _, payload in read_jsonl(Path("data/jsonl/claims.raw.jsonl"))]
+        assert len(raw_claims) == 3
         assert len(list(read_jsonl(Path("data/jsonl/claims.validated.jsonl")))) == 3
         assert len(list(read_jsonl(Path("data/jsonl/claims.normalized.jsonl")))) == 3
+
+        trace = runner.invoke(app, ["trace-claim", raw_claims[0]["claim_id"]])
+        assert trace.exit_code == 0, trace.stdout
+        trace_payload = json.loads(trace.stdout)
+        assert trace_payload["found"] is True
+        assert trace_payload["raw_claim"]["claim_id"] == raw_claims[0]["claim_id"]
+        assert trace_payload["evidence"]["evidence_id"] == raw_claims[0]["evidence_id"]
+        assert trace_payload["source"]["source_modality"] == "chat"
 
         graph = runner.invoke(app, ["export-graph"])
         assert graph.exit_code == 0, graph.stdout
