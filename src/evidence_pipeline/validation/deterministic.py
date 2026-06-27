@@ -21,6 +21,7 @@ from evidence_pipeline.validation.text_support import (
 )
 
 VALIDATOR_VERSION = "deterministic.v1"
+IMAGE_CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.85
 
 
 @dataclass
@@ -135,6 +136,7 @@ def validate_claim_deterministically(
     errors.extend(attribution_errors)
     attribution_preserved = not attribution_errors
     errors.extend(_audio_risk_errors(claim, evidence, span))
+    errors.extend(_image_risk_errors(claim))
     errors.extend(_ocr_risk_errors(claim, evidence, span))
 
     claim_text = _claim_text_for_checks(claim)
@@ -224,6 +226,34 @@ def _ocr_risk_errors(claim: RawClaimRecord, evidence: Optional[EvidenceRecord], 
     risk_flags = set(_combined_risk_flags(claim, evidence, span))
     if "low_ocr_confidence" in risk_flags:
         return ["low_ocr_confidence"]
+    return []
+
+
+def _classifier_confidence(claim: RawClaimRecord) -> Optional[float]:
+    classifier = claim.attributes.get("classifier")
+    if isinstance(classifier, dict):
+        confidence = classifier.get("confidence")
+        if isinstance(confidence, (int, float)) and not isinstance(confidence, bool):
+            return float(confidence)
+    return claim.confidence
+
+
+def _human_confirmed_visual_label(claim: RawClaimRecord) -> bool:
+    if claim.truth_status == "human_confirmed" or claim.attribution.type == "human_reviewer":
+        return True
+    return bool(claim.attributes.get("human_confirmed") or claim.attributes.get("human_reviewed"))
+
+
+def _image_risk_errors(claim: RawClaimRecord) -> List[str]:
+    if claim.source_modality != "image" or claim.claim_type != "named_visual_classification":
+        return []
+    if _human_confirmed_visual_label(claim):
+        return []
+    confidence = _classifier_confidence(claim)
+    if confidence is None:
+        return ["image_label_missing_confidence"]
+    if confidence < IMAGE_CLASSIFICATION_CONFIDENCE_THRESHOLD:
+        return ["image_label_low_confidence"]
     return []
 
 
