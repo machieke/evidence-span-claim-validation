@@ -56,6 +56,33 @@ def _count_list_values(rows: Iterable[dict], key: str) -> Counter:
     return counter
 
 
+def _count_nested_key(rows: Iterable[dict], container_key: str, key: str) -> Counter:
+    counter: Counter = Counter()
+    for row in rows:
+        container = row.get(container_key) or {}
+        if not isinstance(container, dict):
+            continue
+        value = container.get(key)
+        if value is not None:
+            counter[str(value)] += 1
+    return counter
+
+
+def _count_entity_resolution_bases(rows: Iterable[dict]) -> Counter:
+    counter: Counter = Counter()
+    for row in rows:
+        normalization = row.get("normalization") or {}
+        if not isinstance(normalization, dict):
+            continue
+        for resolution in normalization.get("entity_resolution", []):
+            if not isinstance(resolution, dict):
+                continue
+            basis = resolution.get("basis")
+            if basis is not None:
+                counter[str(basis)] += 1
+    return counter
+
+
 def _count_quarantine_reasons(rows: Iterable[dict]) -> Counter:
     counter: Counter = Counter()
     for row in rows:
@@ -254,6 +281,20 @@ def render_summary_markdown(config: PipelineConfig) -> Tuple[str, Dict[str, int]
     lines.extend(_counter_table("Spans By Modality", "Modality", span_modalities))
     lines.extend(_counter_table("Raw Claims By Modality", "Modality", raw_claim_modalities))
     lines.extend(_counter_table("Validated Claims By Modality", "Modality", validated_claim_modalities))
+    lines.extend(
+        _counter_table(
+            "Normalized Claims By Predicate",
+            "Predicate",
+            _count_nested_key(artifacts["claims_normalized"], "normalized_claim", "predicate"),
+        )
+    )
+    lines.extend(
+        _counter_table(
+            "Entity Resolution Bases",
+            "Basis",
+            _count_entity_resolution_bases(artifacts["claims_normalized"]),
+        )
+    )
     lines.extend(_counter_table("Validation Statuses", "Status", _count_validation_status(artifacts["validations"])))
     lines.extend(
         _counter_table(
