@@ -75,6 +75,34 @@ def _write_overlapping_audio_transcript(path: Path) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
+def _write_low_confidence_audio_transcript(path: Path) -> None:
+    payload = {
+        "source_file": "low_confidence.wav",
+        "language": "en",
+        "utterances": [
+            {
+                "id": "utt_low_asr",
+                "speaker": "SPEAKER_00",
+                "start": 0.0,
+                "end": 2.0,
+                "text": "Hope had three masts.",
+                "asr_confidence": 0.5,
+                "diarization_confidence": 0.9,
+            },
+            {
+                "id": "utt_speaker_uncertain",
+                "speaker": "SPEAKER_01",
+                "start": 3.0,
+                "end": 5.0,
+                "text": "The engine was replaced.",
+                "asr_confidence": 0.95,
+                "diarization_confidence": 0.4,
+            },
+        ],
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
 def test_audio_transcript_pipeline_is_idempotent(tmp_path: Path):
     with runner.isolated_filesystem(temp_dir=tmp_path):
         transcript = Path("transcript.json")
@@ -154,3 +182,33 @@ def test_overlapping_audio_speech_is_quarantined(tmp_path: Path):
         assert all(validation["status"] == "quarantined" for validation in validations)
         assert len(quarantined) == 2
         assert all(record["reason_codes"] == ["overlapping_speech"] for record in quarantined)
+
+
+def test_low_confidence_audio_is_quarantined(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        transcript = Path("low_confidence.json")
+        _write_low_confidence_audio_transcript(transcript)
+
+        commands = [
+            ["ingest-audio-transcript", "low_confidence.json"],
+            ["build-audio-evidence"],
+            ["chunk-audio"],
+            ["detect-audio-spans"],
+            ["extract-claims", "--modality", "audio"],
+            ["validate-claims"],
+        ]
+        for command in commands:
+            result = runner.invoke(app, command)
+            assert result.exit_code == 0, result.stdout
+
+        raw_claims = [payload for _, payload in read_jsonl(Path("data/jsonl/claims.raw.jsonl"))]
+        assert [claim["risk_flags"] for claim in raw_claims] == [
+            ["low_asr_confidence"],
+            ["speaker_uncertain"],
+        ]
+
+        quarantined = [payload for _, payload in read_jsonl(Path("data/jsonl/quarantine.jsonl"))]
+        assert [record["reason_codes"] for record in quarantined] == [
+            ["low_asr_confidence"],
+            ["speaker_uncertain"],
+        ]
