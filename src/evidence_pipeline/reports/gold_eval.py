@@ -1,0 +1,150 @@
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, Iterable, List, Optional, Set, Tuple
+
+from evidence_pipeline.config import PipelineConfig
+from evidence_pipeline.jsonl import ensure_parent, read_jsonl
+
+GoldKey = Tuple[str, str]
+
+
+@dataclass
+class GoldEvaluationResult:
+    output_path: Path
+    metrics: Dict[str, object]
+
+
+def _load_gold_claims(path: Path) -> List[dict]:
+    with path.open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    if isinstance(payload, list):
+        claims = payload
+    elif isinstance(payload, dict) and isinstance(payload.get("claims"), list):
+        claims = payload["claims"]
+    else:
+        raise ValueError("gold file must be a JSON list or an object with a claims list")
+    for claim in claims:
+        if not isinstance(claim, dict):
+            raise ValueError("every gold claim must be a JSON object")
+        if not claim.get("evidence_id"):
+            raise ValueError("every gold claim requires evidence_id")
+        if not claim.get("evidence_text"):
+            raise ValueError("every gold claim requires evidence_text")
+    return claims
+
+
+def _key(record: dict) -> GoldKey:
+    return str(record.get("evidence_id")), str(record.get("evidence_text"))
+
+
+def _gold_keys(claims: Iterable[dict], expected_status: str) -> Set[GoldKey]:
+    return {
+        _key(claim)
+        for claim in claims
+        if str(claim.get("expected_status", "accepted")) == expected_status
+    }
+
+
+def _accepted_keys(config: PipelineConfig) -> Set[GoldKey]:
+    return {
+        _key(payload)
+        for _, payload in read_jsonl(config.jsonl_paths()["claims_validated"])
+        if payload.get("support_status") == "accepted_extracted"
+    }
+
+
+def _quarantined_keys(config: PipelineConfig) -> Set[GoldKey]:
+    keys: Set[GoldKey] = set()
+    for _, payload in read_jsonl(config.jsonl_paths()["quarantine"]):
+        claim_payload = payload.get("payload") or {}
+        if claim_payload.get("evidence_id") and claim_payload.get("evidence_text"):
+            keys.add(_key(claim_payload))
+    return keys
+
+
+def _rate(numerator: int, denominator: int) -> Optional[float]:
+    if denominator == 0:
+        return None
+    return numerator / denominator
+
+
+def evaluate_gold(config: PipelineConfig, gold_path: Path) -> Dict[str, object]:
+    gold_claims = _load_gold_claims(gold_path)
+    expected_accepted = _gold_keys(gold_claims, "accepted")
+    expected_quarantined = _gold_keys(gold_claims, "quarantined")
+    accepted = _accepted_keys(config)
+    quarantined = _quarantined_keys(config)
+
+    accepted_matches = accepted & expected_accepted
+    accepted_false_positives = accepted - expected_accepted
+    accepted_missing = expected_accepted - accepted
+    quarantine_matches = quarantined & expected_quarantined
+
+    return {
+        "gold_claims": len(gold_claims),
+        "expected_accepted": len(expected_accepted),
+        "produced_accepted": len(accepted),
+        "accepted_matches": len(accepted_matches),
+        "accepted_false_positives": len(accepted_false_positives),
+        "accepted_missing": len(accepted_missing),
+        "accepted_precision": _rate(len(accepted_matches), len(accepted)),
+        "accepted_recall": _rate(len(accepted_matches), len(expected_accepted)),
+        "expected_quarantined": len(expected_quarantined),
+        "produced_quarantined": len(quarantined),
+        "quarantine_matches": len(quarantine_matches),
+        "missing_keys": sorted([{"evidence_id": key[0], "evidence_text": key[1]} for key in accepted_missing], key=str),
+        "false_positive_keys": sorted([{"evidence_id": key[0], "evidence_text": key[1]} for key in accepted_false_positives], key=str),
+    }
+
+
+def _format_rate(value: object) -> str:
+    if value is None:
+        return "n/a"
+    return f"{float(value) * 100:.1f}%"
+
+
+def _render_markdown(metrics: Dict[str, object], gold_path: Path) -> str:
+    lines = [
+        "# Gold Evaluation Report",
+        "",
+        f"Gold file: {gold_path}",
+        "",
+        "## Metrics",
+        "",
+        "| Metric | Value |",
+        "| --- | --- |",
+        f"| Gold claims | {metrics['gold_claims']} |",
+        f"| Expected accepted | {metrics['expected_accepted']} |",
+        f"| Produced accepted | {metrics['produced_accepted']} |",
+        f"| Accepted matches | {metrics['accepted_matches']} |",
+        f"| Accepted precision | {_format_rate(metrics['accepted_precision'])} |",
+        f"| Accepted recall | {_format_rate(metrics['accepted_recall'])} |",
+        f"| Accepted false positives | {metrics['accepted_false_positives']} |",
+        f"| Accepted missing | {metrics['accepted_missing']} |",
+        f"| Expected quarantined | {metrics['expected_quarantined']} |",
+        f"| Produced quarantined | {metrics['produced_quarantined']} |",
+        f"| Quarantine matches | {metrics['quarantine_matches']} |",
+        "",
+    ]
+    for title, key in (("Missing Expected Accepted Claims", "missing_keys"), ("Accepted False Positives", "false_positive_keys")):
+        lines.extend([f"## {title}", ""])
+        items = metrics[key]
+        if not items:
+            lines.extend(["_None_", ""])
+            continue
+        for item in items:
+            lines.append(f"- `{item['evidence_id']}`: {item['evidence_text']}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def write_gold_eval_report(config: PipelineConfig, gold_path: Path, output_path: Optional[Path] = None) -> GoldEvaluationResult:
+    if output_path is None:
+        output_path = config.paths.reports_dir / "gold_eval.md"
+    metrics = evaluate_gold(config, gold_path)
+    ensure_parent(output_path)
+    output_path.write_text(_render_markdown(metrics, gold_path), encoding="utf-8")
+    return GoldEvaluationResult(output_path=output_path, metrics=metrics)

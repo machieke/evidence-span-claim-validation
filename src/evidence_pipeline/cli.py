@@ -25,6 +25,7 @@ from evidence_pipeline.jsonl import JSONLDecodeError, append_jsonl, find_record,
 from evidence_pipeline.normalization.claims import normalize_claims
 from evidence_pipeline.normalization.graph_export import export_graph_jsonl
 from evidence_pipeline.reports.summary import write_summary_report
+from evidence_pipeline.reports.gold_eval import write_gold_eval_report
 from evidence_pipeline.schemas import SCHEMA_REGISTRY, EvidenceRecord, SourceModality, SourceRecord
 from evidence_pipeline.spans.image_region_selector import propose_image_regions
 from evidence_pipeline.spans.rule_highlighter import detect_audio_spans, detect_chat_spans, detect_pdf_spans
@@ -420,6 +421,27 @@ def export_graph_command(
     _init_paths(config)
     result = export_graph_jsonl(config, output_path=output)
     typer.echo(f"{result.output_path} edges={result.edge_count}")
+
+
+@app.command("eval-gold")
+def eval_gold_command(
+    gold_file: Path = typer.Argument(..., help="Gold claims JSON file."),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Markdown evaluation report output path."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Evaluate accepted/quarantined claims against a gold JSON file."""
+    config = load_config(config_path)
+    _init_paths(config)
+    if not gold_file.exists() or not gold_file.is_file():
+        raise typer.BadParameter(f"gold file does not exist: {gold_file}")
+    try:
+        result = write_gold_eval_report(config, gold_file, output_path=output)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc))
+    typer.echo(
+        f"{result.output_path} accepted_precision={result.metrics['accepted_precision']} "
+        f"accepted_recall={result.metrics['accepted_recall']}"
+    )
 
 
 @app.command("validate-jsonl")

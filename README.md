@@ -30,6 +30,7 @@ PYTHONPATH=src python3 -m evidence_pipeline validate-claims
 PYTHONPATH=src python3 -m evidence_pipeline normalize-claims
 PYTHONPATH=src python3 -m evidence_pipeline export-graph
 PYTHONPATH=src python3 -m evidence_pipeline report
+PYTHONPATH=src python3 -m evidence_pipeline eval-gold tests/fixtures/gold/chat_claims.json
 PYTHONPATH=src python3 -m evidence_pipeline validate-artifacts
 ```
 

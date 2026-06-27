@@ -89,6 +89,29 @@ def test_chat_pipeline_is_idempotent(tmp_path: Path):
         assert all(edge["schema_version"] == "graph.edge.v1" for edge in edges)
         assert {edge["predicate"] for edge in edges} >= {"asserts", "asks_whether"}
 
+        validated_claims = [payload for _, payload in read_jsonl(Path("data/jsonl/claims.validated.jsonl"))]
+        gold_claims = [
+            {
+                "evidence_id": claim["evidence_id"],
+                "evidence_text": claim["evidence_text"],
+                "expected_status": "accepted",
+            }
+            for claim in validated_claims
+        ]
+        gold_claims.append(
+            {
+                "evidence_id": "ev_missing",
+                "evidence_text": "Missing expected claim.",
+                "expected_status": "accepted",
+            }
+        )
+        Path("gold.json").write_text(json.dumps({"claims": gold_claims}), encoding="utf-8")
+        gold = runner.invoke(app, ["eval-gold", "gold.json"])
+        assert gold.exit_code == 0, gold.stdout
+        gold_report = Path("data/reports/gold_eval.md").read_text(encoding="utf-8")
+        assert "| Accepted precision | 100.0% |" in gold_report
+        assert "| Accepted recall | 75.0% |" in gold_report
+
         report = runner.invoke(app, ["report"])
         assert report.exit_code == 0, report.stdout
         report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
