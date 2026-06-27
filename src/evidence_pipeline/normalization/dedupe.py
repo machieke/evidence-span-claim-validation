@@ -18,13 +18,36 @@ class DedupeResult:
     group_count: int
 
 
+DEDUPE_QUALIFIER_KEYS = {"modality", "truth_status"}
+
+
+def _normalized_proposition(record: NormalizedClaimRecord) -> Dict[str, object]:
+    normalized = record.normalized_claim
+    proposition = {
+        "subject": normalized.get("subject"),
+        "predicate": normalized.get("predicate"),
+        "object": normalized.get("object"),
+    }
+    qualifiers = normalized.get("qualifiers")
+    if isinstance(qualifiers, dict):
+        stable_qualifiers = {
+            key: qualifiers[key]
+            for key in sorted(DEDUPE_QUALIFIER_KEYS)
+            if key in qualifiers
+        }
+        if stable_qualifiers:
+            proposition["qualifiers"] = stable_qualifiers
+    return proposition
+
+
 def _dedupe_key(record: NormalizedClaimRecord) -> str:
-    return json.dumps(record.normalized_claim, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return json.dumps(_normalized_proposition(record), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
 def _group_record(key: str, records: List[NormalizedClaimRecord]) -> Dict[str, object]:
     return {
         "dedupe_id": stable_id("dedupe", {"normalized_claim": key}),
+        "normalized_proposition": json.loads(key),
         "normalized_claim": records[0].normalized_claim,
         "member_count": len(records),
         "member_claim_ids": [record.claim_id for record in records],

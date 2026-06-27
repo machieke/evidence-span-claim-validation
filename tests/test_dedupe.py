@@ -10,17 +10,25 @@ from evidence_pipeline.schemas.claims import NormalizedClaimRecord
 runner = CliRunner()
 
 
-def _normalized_claim(claim_id: str, evidence_id: str, object_value: str) -> NormalizedClaimRecord:
+def _normalized_claim(
+    claim_id: str,
+    evidence_id: str,
+    object_value: str,
+    source_id: str = "src_1",
+    subject: str = "speaker:bob",
+    predicate: str = "asserts",
+    qualifiers: dict = None,
+) -> NormalizedClaimRecord:
     return NormalizedClaimRecord(
         normalized_claim_id=f"n_{claim_id}",
         claim_id=claim_id,
-        source_id="src_1",
+        source_id=source_id,
         evidence_id=evidence_id,
         normalized_claim={
-            "subject": "speaker:bob",
-            "predicate": "asserts",
+            "subject": subject,
+            "predicate": predicate,
             "object": object_value,
-            "qualifiers": {"truth_status": "speaker_asserted_unverified"},
+            "qualifiers": qualifiers or {"truth_status": "speaker_asserted_unverified"},
         },
     )
 
@@ -40,3 +48,56 @@ def test_dedupe_claims_groups_duplicate_normalized_claims(tmp_path: Path):
         assert len(groups) == 1
         assert groups[0]["member_count"] == 2
         assert groups[0]["member_claim_ids"] == ["claim_1", "claim_2"]
+
+
+def test_dedupe_claims_groups_cross_source_normalized_propositions(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        init = runner.invoke(app, ["init"])
+        assert init.exit_code == 0
+        append_jsonl(
+            Path("data/jsonl/claims.normalized.jsonl"),
+            _normalized_claim(
+                "claim_1",
+                "ev_1",
+                "mast",
+                source_id="src_1",
+                subject="entity:vessel_hope",
+                predicate="has_feature",
+                qualifiers={
+                    "truth_status": "source_asserted_unverified",
+                    "attribution": {"type": "document", "agent": "src_1"},
+                    "source_faithful_claim": "Document one states Hope has a mast.",
+                },
+            ),
+        )
+        append_jsonl(
+            Path("data/jsonl/claims.normalized.jsonl"),
+            _normalized_claim(
+                "claim_2",
+                "ev_2",
+                "mast",
+                source_id="src_2",
+                subject="entity:vessel_hope",
+                predicate="has_feature",
+                qualifiers={
+                    "truth_status": "source_asserted_unverified",
+                    "attribution": {"type": "document", "agent": "src_2"},
+                    "source_faithful_claim": "Document two states Hope has a mast.",
+                },
+            ),
+        )
+
+        result = runner.invoke(app, ["dedupe-claims"])
+
+        assert result.exit_code == 0, result.stdout
+        groups = [payload for _, payload in read_jsonl(Path("data/reports/claim_duplicates.jsonl"))]
+        assert len(groups) == 1
+        assert groups[0]["member_count"] == 2
+        assert groups[0]["source_ids"] == ["src_1", "src_2"]
+        assert groups[0]["normalized_proposition"] == {
+            "subject": "entity:vessel_hope",
+            "predicate": "has_feature",
+            "object": "mast",
+            "qualifiers": {"truth_status": "source_asserted_unverified"},
+        }
+        assert "attribution" not in groups[0]["normalized_proposition"]["qualifiers"]
