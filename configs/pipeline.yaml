@@ -36,3 +36,6 @@ privacy:
   local_model_providers:
     - deterministic
     - local
+
+retention:
+  raw_source_retention_days: 365

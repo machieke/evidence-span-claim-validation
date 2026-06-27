@@ -34,6 +34,7 @@ from evidence_pipeline.normalization.claims import NORMALIZER_VERSION, normalize
 from evidence_pipeline.normalization.dedupe import dedupe_normalized_claims
 from evidence_pipeline.normalization.graph_export import export_graph_jsonl
 from evidence_pipeline.normalization.metta_export import export_metta
+from evidence_pipeline.retention import write_retention_plan
 from evidence_pipeline.reports.summary import write_summary_report
 from evidence_pipeline.reports.gold_eval import write_gold_eval_report
 from evidence_pipeline.reports.lineage import trace_claim, write_claim_trace
@@ -1019,6 +1020,18 @@ def check_privacy_command(
     )
     if fail_on_violation and result.violation_count:
         raise typer.Exit(code=1)
+
+
+@app.command("retention-plan")
+def retention_plan_command(
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Retention plan JSONL output path."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Write a dry-run raw source retention plan."""
+    config = load_config(config_path)
+    _init_paths(config)
+    result = write_retention_plan(config, output_path=output)
+    typer.echo(f"{result.output_path} candidates={result.candidate_count}")
 
 
 @app.command("validate-jsonl")

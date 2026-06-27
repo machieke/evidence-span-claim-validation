@@ -46,10 +46,15 @@ class PrivacyConfig(BaseModel):
     local_model_providers: List[str] = Field(default_factory=lambda: ["deterministic", "local"])
 
 
+class RetentionConfig(BaseModel):
+    raw_source_retention_days: int = 365
+
+
 class PipelineConfig(BaseModel):
     paths: PathConfig = Field(default_factory=PathConfig)
     jsonl: JSONLConfig = Field(default_factory=JSONLConfig)
     privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)
+    retention: RetentionConfig = Field(default_factory=RetentionConfig)
 
     def jsonl_paths(self) -> Dict[str, Path]:
         return {
