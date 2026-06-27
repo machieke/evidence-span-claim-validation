@@ -8,6 +8,7 @@ from evidence_pipeline.ids import stable_id
 from evidence_pipeline.jsonl import append_jsonl, existing_values, read_jsonl_records
 from evidence_pipeline.schemas.claims import ClaimValidationSummary, RawClaimRecord, ValidatedClaimRecord
 from evidence_pipeline.schemas.evidence import EvidenceRecord
+from evidence_pipeline.schemas.review import ReviewDecisionRecord
 from evidence_pipeline.schemas.spans import SpanRecord
 from evidence_pipeline.schemas.validation import QuarantineRecord, ValidationRecord
 from evidence_pipeline.validation.text_support import (
@@ -100,6 +101,7 @@ def validate_claim_deterministically(
     claim: RawClaimRecord,
     evidence: Optional[EvidenceRecord],
     span: Optional[SpanRecord],
+    review_decisions: Optional[Sequence[ReviewDecisionRecord]] = None,
 ) -> _ClaimValidationDecision:
     errors: List[str] = []
     warnings: List[str] = []
@@ -136,7 +138,7 @@ def validate_claim_deterministically(
     errors.extend(attribution_errors)
     attribution_preserved = not attribution_errors
     errors.extend(_audio_risk_errors(claim, evidence, span))
-    errors.extend(_image_risk_errors(claim))
+    errors.extend(_image_risk_errors(claim, review_decisions or []))
     errors.extend(_ocr_risk_errors(claim, evidence, span))
 
     claim_text = _claim_text_for_checks(claim)
@@ -238,16 +240,39 @@ def _classifier_confidence(claim: RawClaimRecord) -> Optional[float]:
     return claim.confidence
 
 
-def _human_confirmed_visual_label(claim: RawClaimRecord) -> bool:
+def _latest_review_decision(review_decisions: Sequence[ReviewDecisionRecord]) -> Optional[ReviewDecisionRecord]:
+    if not review_decisions:
+        return None
+    latest = review_decisions[0]
+    for review in review_decisions[1:]:
+        if review.reviewed_at >= latest.reviewed_at:
+            latest = review
+    return latest
+
+
+def _human_confirmed_visual_label(
+    claim: RawClaimRecord,
+    latest_review: Optional[ReviewDecisionRecord],
+) -> bool:
+    if latest_review is not None and latest_review.decision == "accept":
+        return True
     if claim.truth_status == "human_confirmed" or claim.attribution.type == "human_reviewer":
         return True
     return bool(claim.attributes.get("human_confirmed") or claim.attributes.get("human_reviewed"))
 
 
-def _image_risk_errors(claim: RawClaimRecord) -> List[str]:
+def _image_risk_errors(
+    claim: RawClaimRecord,
+    review_decisions: Sequence[ReviewDecisionRecord],
+) -> List[str]:
     if claim.source_modality != "image" or claim.claim_type != "named_visual_classification":
         return []
-    if _human_confirmed_visual_label(claim):
+    latest_review = _latest_review_decision(review_decisions)
+    if latest_review is not None and latest_review.decision == "reject":
+        return ["human_review_rejected_label"]
+    if latest_review is not None and latest_review.decision == "needs_review":
+        return ["human_review_needs_review"]
+    if _human_confirmed_visual_label(claim, latest_review):
         return []
     confidence = _classifier_confidence(claim)
     if confidence is None:
@@ -274,6 +299,9 @@ def validate_raw_claims(
     requested_claim_ids = set(claim_ids or [])
     evidence_by_id = {record.evidence_id: record for _, record in read_jsonl_records(paths["evidence"], EvidenceRecord)}
     spans_by_id = {record.span_id: record for _, record in read_jsonl_records(paths["spans"], SpanRecord)}
+    reviews_by_claim_id: Dict[str, List[ReviewDecisionRecord]] = {}
+    for _, review in read_jsonl_records(paths["review_decisions"], ReviewDecisionRecord):
+        reviews_by_claim_id.setdefault(review.claim_id, []).append(review)
     existing_validation_ids = existing_values(paths["validations"], "validation_id")
     accepted = 0
     quarantined = 0
@@ -291,7 +319,12 @@ def validate_raw_claims(
 
         evidence = evidence_by_id.get(claim.evidence_id)
         span = spans_by_id.get(claim.span_id) if claim.span_id else None
-        decision = validate_claim_deterministically(claim, evidence, span)
+        decision = validate_claim_deterministically(
+            claim,
+            evidence,
+            span,
+            review_decisions=reviews_by_claim_id.get(claim.claim_id, []),
+        )
 
         append_jsonl(
             paths["validations"],

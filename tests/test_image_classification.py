@@ -85,6 +85,87 @@ def test_low_confidence_image_region_classification_is_quarantined(tmp_path: Pat
         assert len(list(read_jsonl(Path("data/jsonl/claims.normalized.jsonl")))) == 0
 
 
+def test_review_accepts_low_confidence_image_region_classification(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        image_path = Path("image.png")
+        Image.new("RGB", (16, 16), color=(128, 128, 128)).save(image_path)
+
+        commands = [
+            ["ingest-images", "image.png"],
+            ["propose-image-regions", "--patch-size", "16", "--stride", "16"],
+            ["build-image-evidence"],
+            ["embed-image-regions"],
+            ["classify-image-regions"],
+        ]
+        for command in commands:
+            result = runner.invoke(app, command)
+            assert result.exit_code == 0, result.stdout
+
+        claim = next(payload for _, payload in read_jsonl(Path("data/jsonl/claims.raw.jsonl")))
+        review = runner.invoke(
+            app,
+            [
+                "review-claim",
+                claim["claim_id"],
+                "--decision",
+                "accept",
+                "--reviewer-id",
+                "reviewer_1",
+                "--reason-code",
+                "human_confirmed_label",
+            ],
+        )
+        validation = runner.invoke(app, ["validate-claims"])
+
+        assert review.exit_code == 0, review.stdout
+        assert validation.exit_code == 0, validation.stdout
+        assert "claims_accepted=1" in validation.stdout
+        validations = [payload for _, payload in read_jsonl(Path("data/jsonl/validations.jsonl"))]
+        assert validations[0]["status"] == "accepted_extracted"
+        assert validations[0]["errors"] == []
+
+
+def test_review_rejects_high_confidence_image_region_classification(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        image_path = Path("image.png")
+        Image.new("RGB", (16, 16), color=(220, 20, 20)).save(image_path)
+
+        commands = [
+            ["ingest-images", "image.png"],
+            ["propose-image-regions", "--patch-size", "16", "--stride", "16"],
+            ["build-image-evidence"],
+            ["embed-image-regions"],
+            ["classify-image-regions"],
+        ]
+        for command in commands:
+            result = runner.invoke(app, command)
+            assert result.exit_code == 0, result.stdout
+
+        claim = next(payload for _, payload in read_jsonl(Path("data/jsonl/claims.raw.jsonl")))
+        review = runner.invoke(
+            app,
+            [
+                "review-claim",
+                claim["claim_id"],
+                "--decision",
+                "reject",
+                "--reviewer-id",
+                "reviewer_1",
+                "--reason-code",
+                "wrong_label",
+            ],
+        )
+        validation = runner.invoke(app, ["validate-claims"])
+
+        assert review.exit_code == 0, review.stdout
+        assert validation.exit_code == 0, validation.stdout
+        assert "claims_quarantined=1" in validation.stdout
+        validations = [payload for _, payload in read_jsonl(Path("data/jsonl/validations.jsonl"))]
+        quarantined = [payload for _, payload in read_jsonl(Path("data/jsonl/quarantine.jsonl"))]
+        assert validations[0]["errors"] == ["human_review_rejected_label"]
+        assert quarantined[0]["reason_codes"] == ["human_review_rejected_label"]
+
+
 def test_human_confirmed_image_classification_bypasses_confidence_gate(tmp_path: Path):
     with runner.isolated_filesystem(temp_dir=tmp_path):
         init = runner.invoke(app, ["init"])
