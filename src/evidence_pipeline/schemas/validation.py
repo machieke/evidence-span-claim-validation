@@ -33,6 +33,12 @@ class ValidationRecord(StrictModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
     schema_version: str = "validation.v1"
 
+    @model_validator(mode="after")
+    def validate_rejected_status_errors(self) -> "ValidationRecord":
+        if self.status in {"schema_invalid", "quarantined"} and not self.errors:
+            raise ValueError("rejected validation records require at least one error code")
+        return self
+
 
 class ErrorRecord(StrictModel):
     error_id: str

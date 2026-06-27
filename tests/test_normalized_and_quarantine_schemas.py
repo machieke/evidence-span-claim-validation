@@ -2,7 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from evidence_pipeline.schemas.claims import NormalizedClaimRecord
-from evidence_pipeline.schemas.validation import QuarantineRecord
+from evidence_pipeline.schemas.validation import QuarantineRecord, ValidationRecord
 
 
 def test_normalized_claim_links_to_validated_claim_and_evidence():
@@ -43,3 +43,21 @@ def test_quarantine_record_rejects_empty_reasons():
             claim_id="claim_1",
             stage="validate_claims",
         )
+
+
+def test_rejected_validation_record_requires_errors():
+    with pytest.raises(ValidationError):
+        ValidationRecord(
+            validation_id="val_1",
+            claim_id="claim_1",
+            stage="validate_claims",
+            status="quarantined",
+        )
+
+    accepted = ValidationRecord(
+        validation_id="val_2",
+        claim_id="claim_2",
+        stage="validate_claims",
+        status="accepted_extracted",
+    )
+    assert accepted.errors == []
