@@ -6,6 +6,7 @@ from typer.testing import CliRunner
 
 from evidence_pipeline.cli import app
 from evidence_pipeline.jsonl import append_jsonl, read_jsonl
+from evidence_pipeline.schemas.audio import AudioUtteranceRecord
 from evidence_pipeline.schemas.chat import ChatMessageRecord
 
 
@@ -159,3 +160,54 @@ def test_redact_pii_writes_redacted_copy_without_mutating_source(tmp_path: Path)
         invalid = runner.invoke(app, ["redact-pii", "--artifact", "all"])
         assert invalid.exit_code != 0
         assert "requires one artifact at a time" in invalid.stdout
+
+
+def test_audio_transcript_pii_detection_and_redaction(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        init = runner.invoke(app, ["init"])
+        assert init.exit_code == 0
+
+        source_path = Path("data/jsonl/audio_utterances.jsonl")
+        append_jsonl(
+            source_path,
+            AudioUtteranceRecord(
+                utterance_id="utt_1",
+                source_id="src_audio_1",
+                speaker="SPEAKER_00",
+                start=0.0,
+                end=4.0,
+                text="Reach me at alice@example.com, 415-555-1212, or 123-45-6789.",
+                asr_confidence=0.96,
+                diarization_confidence=0.9,
+            ),
+        )
+
+        detection = runner.invoke(app, ["detect-pii", "--artifact", "audio_utterances"])
+        assert detection.exit_code == 0, detection.stdout
+        assert "findings=3" in detection.stdout
+        findings_path = Path("data/reports/pii_findings.jsonl")
+        findings_text = findings_path.read_text(encoding="utf-8")
+        findings = [payload for _, payload in read_jsonl(findings_path)]
+        assert {finding["pii_type"] for finding in findings} == {"email", "phone", "ssn"}
+        assert all(finding["artifact"] == "audio_utterances" for finding in findings)
+        assert all(finding["record_id"] == "utt_1" for finding in findings)
+        assert "alice@example.com" not in findings_text
+        assert "415-555-1212" not in findings_text
+        assert "123-45-6789" not in findings_text
+
+        redaction = runner.invoke(app, ["redact-pii", "--artifact", "audio_utterances"])
+        assert redaction.exit_code == 0, redaction.stdout
+        assert "records=1" in redaction.stdout
+        assert "replacements=3" in redaction.stdout
+        redacted_path = Path("data/reports/audio_utterances.redacted.jsonl")
+        redacted_text = redacted_path.read_text(encoding="utf-8")
+        redacted_records = [payload for _, payload in read_jsonl(redacted_path)]
+        assert redacted_records[0]["text"] == "Reach me at [EMAIL], [PHONE], or [SSN]."
+        assert "alice@example.com" not in redacted_text
+        assert "415-555-1212" not in redacted_text
+        assert "123-45-6789" not in redacted_text
+
+        source_text = source_path.read_text(encoding="utf-8")
+        assert "alice@example.com" in source_text
+        assert "415-555-1212" in source_text
+        assert "123-45-6789" in source_text
