@@ -4,7 +4,9 @@ from PIL import Image
 from typer.testing import CliRunner
 
 from evidence_pipeline.cli import app
-from evidence_pipeline.jsonl import read_jsonl
+from evidence_pipeline.jsonl import append_jsonl, read_jsonl
+from evidence_pipeline.schemas.claims import RawClaimRecord
+from evidence_pipeline.schemas.evidence import EvidenceRecord
 
 
 runner = CliRunner()
@@ -59,9 +61,66 @@ def test_image_region_clustering_emits_cluster_claims(tmp_path: Path):
             "visual_region_proposal",
         }
 
-        assert len(list(read_jsonl(Path("data/jsonl/claims.validated.jsonl")))) == 3
-        assert len(list(read_jsonl(Path("data/jsonl/claims.normalized.jsonl")))) == 3
-        assert len(list(read_jsonl(Path("data/reports/claim_graph.jsonl")))) == 3
+        validations = [payload for _, payload in read_jsonl(Path("data/jsonl/validations.jsonl"))]
+        quarantined = [payload for _, payload in read_jsonl(Path("data/jsonl/quarantine.jsonl"))]
+        cluster_validation = next(
+            record for record in validations if record["claim_id"].startswith("claim_vf_")
+        )
+        assert cluster_validation["errors"] == [
+            "image_cluster_too_small",
+            "image_cluster_insufficient_cross_source",
+        ]
+        assert quarantined[0]["reason_codes"] == cluster_validation["errors"]
+        assert len(list(read_jsonl(Path("data/jsonl/claims.validated.jsonl")))) == 2
+        assert len(list(read_jsonl(Path("data/jsonl/claims.normalized.jsonl")))) == 2
+        assert len(list(read_jsonl(Path("data/reports/claim_graph.jsonl")))) == 2
 
         artifact_check = runner.invoke(app, ["validate-artifacts"])
         assert artifact_check.exit_code == 0, artifact_check.stdout
+
+
+def test_large_cross_source_visual_cluster_is_accepted(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        init = runner.invoke(app, ["init"])
+        assert init.exit_code == 0
+
+        evidence = EvidenceRecord(
+            evidence_id="ev_cluster_1",
+            source_id="src_img_1",
+            source_modality="image",
+            evidence_type="visual_cluster",
+            text=None,
+            provenance={
+                "feature_cluster_id": "cluster_1",
+                "cluster_size": 5,
+                "cohesion_score": 0.91,
+                "source_ids": ["src_img_1", "src_img_2", "src_img_3"],
+                "member_region_ids": ["r1", "r2", "r3", "r4", "r5"],
+            },
+        )
+        claim = RawClaimRecord(
+            claim_id="claim_vf_cluster_1",
+            source_id="src_img_1",
+            source_modality="image",
+            evidence_id="ev_cluster_1",
+            claim_type="unnamed_visual_feature_cluster",
+            source_faithful_claim="Regions r1, r2, r3, r4, r5 were clustered as visually similar.",
+            subject="cluster_1",
+            predicate="has_member_regions",
+            object=["r1", "r2", "r3", "r4", "r5"],
+            attributes={"cohesion_score": 0.91},
+            modality="model_observation",
+            attribution={"type": "model", "agent": "clusterer_v1"},
+            truth_status="model_observation_unverified",
+            confidence=0.91,
+        )
+        append_jsonl(Path("data/jsonl/evidence.jsonl"), evidence)
+        append_jsonl(Path("data/jsonl/claims.raw.jsonl"), claim)
+
+        result = runner.invoke(app, ["validate-claims"])
+
+        assert result.exit_code == 0, result.stdout
+        assert "claims_accepted=1" in result.stdout
+        validations = [payload for _, payload in read_jsonl(Path("data/jsonl/validations.jsonl"))]
+        assert validations[0]["status"] == "accepted_extracted"
+        assert validations[0]["errors"] == []

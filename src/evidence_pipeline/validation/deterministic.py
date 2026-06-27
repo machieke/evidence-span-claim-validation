@@ -23,6 +23,9 @@ from evidence_pipeline.validation.text_support import (
 
 VALIDATOR_VERSION = "deterministic.v1"
 IMAGE_CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.85
+IMAGE_CLUSTER_MIN_COHESION = 0.75
+IMAGE_CLUSTER_MIN_SIZE = 5
+IMAGE_CLUSTER_MIN_SOURCE_COUNT = 3
 
 
 @dataclass
@@ -138,7 +141,7 @@ def validate_claim_deterministically(
     errors.extend(attribution_errors)
     attribution_preserved = not attribution_errors
     errors.extend(_audio_risk_errors(claim, evidence, span))
-    errors.extend(_image_risk_errors(claim, review_decisions or []))
+    errors.extend(_image_risk_errors(claim, evidence, review_decisions or []))
     errors.extend(_ocr_risk_errors(claim, evidence, span))
 
     claim_text = _claim_text_for_checks(claim)
@@ -240,6 +243,39 @@ def _classifier_confidence(claim: RawClaimRecord) -> Optional[float]:
     return claim.confidence
 
 
+def _numeric_value(value: object) -> Optional[float]:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    return None
+
+
+def _visual_cluster_size(claim: RawClaimRecord, evidence: Optional[EvidenceRecord]) -> Optional[int]:
+    if evidence is not None:
+        cluster_size = evidence.provenance.get("cluster_size")
+        if isinstance(cluster_size, int) and not isinstance(cluster_size, bool):
+            return cluster_size
+    if isinstance(claim.object, list):
+        return len(claim.object)
+    return None
+
+
+def _visual_cluster_source_count(evidence: Optional[EvidenceRecord]) -> Optional[int]:
+    if evidence is None:
+        return None
+    source_ids = evidence.provenance.get("source_ids")
+    if isinstance(source_ids, list):
+        return len({str(source_id) for source_id in source_ids})
+    return None
+
+
+def _visual_cluster_cohesion(claim: RawClaimRecord, evidence: Optional[EvidenceRecord]) -> Optional[float]:
+    if evidence is not None:
+        cohesion_score = _numeric_value(evidence.provenance.get("cohesion_score"))
+        if cohesion_score is not None:
+            return cohesion_score
+    return _numeric_value(claim.attributes.get("cohesion_score"))
+
+
 def _latest_review_decision(review_decisions: Sequence[ReviewDecisionRecord]) -> Optional[ReviewDecisionRecord]:
     if not review_decisions:
         return None
@@ -263,9 +299,14 @@ def _human_confirmed_visual_label(
 
 def _image_risk_errors(
     claim: RawClaimRecord,
+    evidence: Optional[EvidenceRecord],
     review_decisions: Sequence[ReviewDecisionRecord],
 ) -> List[str]:
-    if claim.source_modality != "image" or claim.claim_type != "named_visual_classification":
+    if claim.source_modality != "image":
+        return []
+    if claim.claim_type == "unnamed_visual_feature_cluster":
+        return _image_cluster_errors(claim, evidence)
+    if claim.claim_type != "named_visual_classification":
         return []
     latest_review = _latest_review_decision(review_decisions)
     if latest_review is not None and latest_review.decision == "reject":
@@ -280,6 +321,23 @@ def _image_risk_errors(
     if confidence < IMAGE_CLASSIFICATION_CONFIDENCE_THRESHOLD:
         return ["image_label_low_confidence"]
     return []
+
+
+def _image_cluster_errors(claim: RawClaimRecord, evidence: Optional[EvidenceRecord]) -> List[str]:
+    errors = []
+    cluster_size = _visual_cluster_size(claim, evidence)
+    if cluster_size is None or cluster_size < IMAGE_CLUSTER_MIN_SIZE:
+        errors.append("image_cluster_too_small")
+
+    cohesion_score = _visual_cluster_cohesion(claim, evidence)
+    if cohesion_score is None or cohesion_score < IMAGE_CLUSTER_MIN_COHESION:
+        errors.append("image_cluster_low_cohesion")
+
+    source_count = _visual_cluster_source_count(evidence)
+    if source_count is None or source_count < IMAGE_CLUSTER_MIN_SOURCE_COUNT:
+        errors.append("image_cluster_insufficient_cross_source")
+
+    return errors
 
 
 def _validation_id(claim_id: str) -> str:
