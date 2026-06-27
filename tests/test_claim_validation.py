@@ -178,4 +178,7 @@ def test_validate_claims_quarantines_unsupported_named_entities(tmp_path: Path):
         report = runner.invoke(app, ["report"])
         assert report.exit_code == 0, report.stdout
         report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
+        assert "## Validation Errors" in report_text
+        assert "## Validation Warnings" in report_text
+        assert "| unsupported_entities_introduced | 1 |" in report_text
         assert "| Unsupported entity validation rate | 100.0% |" in report_text

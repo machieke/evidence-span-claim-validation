@@ -48,6 +48,14 @@ def _count_by(rows: Iterable[dict], key: str) -> Counter:
     return counter
 
 
+def _count_list_values(rows: Iterable[dict], key: str) -> Counter:
+    counter: Counter = Counter()
+    for row in rows:
+        for value in row.get(key, []):
+            counter[str(value)] += 1
+    return counter
+
+
 def _count_quarantine_reasons(rows: Iterable[dict]) -> Counter:
     counter: Counter = Counter()
     for row in rows:
@@ -247,6 +255,20 @@ def render_summary_markdown(config: PipelineConfig) -> Tuple[str, Dict[str, int]
     lines.extend(_counter_table("Raw Claims By Modality", "Modality", raw_claim_modalities))
     lines.extend(_counter_table("Validated Claims By Modality", "Modality", validated_claim_modalities))
     lines.extend(_counter_table("Validation Statuses", "Status", _count_validation_status(artifacts["validations"])))
+    lines.extend(
+        _counter_table(
+            "Validation Errors",
+            "Error",
+            _count_list_values(artifacts["validations"], "errors"),
+        )
+    )
+    lines.extend(
+        _counter_table(
+            "Validation Warnings",
+            "Warning",
+            _count_list_values(artifacts["validations"], "warnings"),
+        )
+    )
     lines.extend(_counter_table("Jobs By Stage", "Stage", _count_by(artifacts["jobs"], "stage")))
     lines.extend(_counter_table("Review Decisions", "Decision", _count_by(artifacts["review_decisions"], "decision")))
     lines.extend(_counter_table("Audit Events", "Action", _count_by(artifacts["audit_events"], "action")))
