@@ -123,6 +123,8 @@ def test_review_accepts_low_confidence_image_region_classification(tmp_path: Pat
         validations = [payload for _, payload in read_jsonl(Path("data/jsonl/validations.jsonl"))]
         assert validations[0]["status"] == "accepted_extracted"
         assert validations[0]["errors"] == []
+        assert validations[0]["metadata"]["review_decisions"][0]["decision"] == "accept"
+        assert validations[0]["metadata"]["review_decisions"][0]["reason_codes"] == ["human_confirmed_label"]
 
 
 def test_review_rejects_high_confidence_image_region_classification(tmp_path: Path):
@@ -163,6 +165,8 @@ def test_review_rejects_high_confidence_image_region_classification(tmp_path: Pa
         validations = [payload for _, payload in read_jsonl(Path("data/jsonl/validations.jsonl"))]
         quarantined = [payload for _, payload in read_jsonl(Path("data/jsonl/quarantine.jsonl"))]
         assert validations[0]["errors"] == ["human_review_rejected_label"]
+        assert validations[0]["metadata"]["review_decisions"][0]["decision"] == "reject"
+        assert validations[0]["metadata"]["review_decisions"][0]["reason_codes"] == ["wrong_label"]
         assert quarantined[0]["reason_codes"] == ["human_review_rejected_label"]
 
 

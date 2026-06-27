@@ -290,6 +290,10 @@ def _quarantine_id(claim_id: str) -> str:
     return stable_id("q", {"claim_id": claim_id, "validator": VALIDATOR_VERSION})
 
 
+def _review_metadata(review_decisions: Sequence[ReviewDecisionRecord]) -> List[Dict[str, object]]:
+    return [review.model_dump(mode="json") for review in review_decisions]
+
+
 def validate_raw_claims(
     config: PipelineConfig,
     source_id: Optional[str] = None,
@@ -319,11 +323,12 @@ def validate_raw_claims(
 
         evidence = evidence_by_id.get(claim.evidence_id)
         span = spans_by_id.get(claim.span_id) if claim.span_id else None
+        review_decisions = reviews_by_claim_id.get(claim.claim_id, [])
         decision = validate_claim_deterministically(
             claim,
             evidence,
             span,
-            review_decisions=reviews_by_claim_id.get(claim.claim_id, []),
+            review_decisions=review_decisions,
         )
 
         append_jsonl(
@@ -340,6 +345,7 @@ def validate_raw_claims(
                 metadata={
                     "source_modality": claim.source_modality,
                     "validation": decision.summary.model_dump(mode="json"),
+                    "review_decisions": _review_metadata(review_decisions),
                 },
             ),
         )
