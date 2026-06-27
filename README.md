@@ -74,6 +74,7 @@ PYTHONPATH=src python3 -m evidence_pipeline ingest-images data/raw/images/
 PYTHONPATH=src python3 -m evidence_pipeline propose-image-regions --patch-size 224 --stride 112
 PYTHONPATH=src python3 -m evidence_pipeline build-image-evidence
 PYTHONPATH=src python3 -m evidence_pipeline embed-image-regions
+PYTHONPATH=src python3 -m evidence_pipeline classify-image-regions
 PYTHONPATH=src python3 -m evidence_pipeline cluster-image-regions
 PYTHONPATH=src python3 -m evidence_pipeline build-image-cluster-evidence
 PYTHONPATH=src python3 -m evidence_pipeline extract-claims --modality image

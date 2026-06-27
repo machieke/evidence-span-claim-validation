@@ -12,6 +12,7 @@ from evidence_pipeline.chunking.audio_chunker import chunk_audio
 from evidence_pipeline.chunking.pdf_chunker import chunk_pdf
 from evidence_pipeline.config import PipelineConfig, load_config
 from evidence_pipeline.extraction.claim_extractor import extract_claims_from_spans
+from evidence_pipeline.extraction.image_classifier import classify_image_regions
 from evidence_pipeline.ingest.chat import ingest_chat_export
 from evidence_pipeline.ingest.chat_evidence import build_chat_evidence
 from evidence_pipeline.ingest.audio import ingest_audio_transcript
@@ -383,6 +384,33 @@ def embed_image_regions_command(
     _init_paths(config)
     result = build_image_region_embeddings(config, source_id=source_id, embedding_model=embedding_model)
     typer.echo(f"embeddings_created={result.created} embeddings_skipped={result.skipped}")
+
+
+@app.command("classify-image-regions")
+def classify_image_regions_command(
+    source_id: Optional[str] = typer.Option(None, "--source-id", help="Only classify regions for this source."),
+    embedding_model: str = typer.Option(
+        "color_rgb_mean_std_v1",
+        "--embedding-model",
+        help="Embedding model identifier.",
+    ),
+    classifier_model: str = typer.Option(
+        "dominant_color_classifier_v1",
+        "--classifier-model",
+        help="Classifier model identifier.",
+    ),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Emit named visual classification claims from image-region embeddings."""
+    config = load_config(config_path)
+    _init_paths(config)
+    result = classify_image_regions(
+        config,
+        source_id=source_id,
+        embedding_model=embedding_model,
+        classifier_model=classifier_model,
+    )
+    typer.echo(f"classifications_created={result.created} classifications_skipped={result.skipped}")
 
 
 @app.command("cluster-image-regions")
