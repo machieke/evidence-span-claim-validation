@@ -33,6 +33,7 @@ ARTIFACT_KEY_FIELDS = {
     "claim_graph": "edge_id",
     "claim_duplicates": "dedupe_id",
     "claim_repairs": "repair_id",
+    "model_routing": "routing_id",
     "privacy_policy_violations": "violation_id",
     "retention_plan": "retention_id",
 }
