@@ -20,6 +20,12 @@ def _rows(path: Path) -> List[dict]:
     return [payload for _, payload in read_jsonl(path)]
 
 
+def _optional_rows(path: Path) -> List[dict]:
+    if not path.exists():
+        return []
+    return _rows(path)
+
+
 def _count_by(rows: Iterable[dict], key: str) -> Counter:
     counter: Counter = Counter()
     for row in rows:
@@ -77,6 +83,7 @@ def _quality_rows(
     validations: List[dict],
     claims_validated: List[dict],
     quarantine: List[dict],
+    repair_suggestions: List[dict],
 ) -> List[Tuple[str, object]]:
     exact_matches = 0
     text_validated = 0
@@ -96,8 +103,10 @@ def _quality_rows(
         ("Accepted text claim exact-evidence rate", _rate(exact_matches, text_validated)),
         ("Raw claim quarantine rate", _rate(len(quarantine), len(claims_raw))),
         ("Unsupported entity validation rate", _rate(unsupported_entities, len(validations))),
+        ("Evidence repair suggestion rate", _rate(len(repair_suggestions), len(claims_raw))),
         ("Accepted claims", len(claims_validated)),
         ("Quarantined claims", len(quarantine)),
+        ("Evidence repair suggestions", len(repair_suggestions)),
     ]
 
 
@@ -124,6 +133,7 @@ def render_summary_markdown(config: PipelineConfig) -> Tuple[str, Dict[str, int]
         "audit_events": _rows(paths["audit_events"]),
         "errors": _rows(paths["errors"]),
         "quarantine": _rows(paths["quarantine"]),
+        "claim_repairs": _optional_rows(config.paths.reports_dir / "claim_repairs.jsonl"),
     }
     record_counts = {name: len(rows) for name, rows in artifacts.items()}
 
@@ -164,6 +174,7 @@ def render_summary_markdown(config: PipelineConfig) -> Tuple[str, Dict[str, int]
                 artifacts["validations"],
                 artifacts["claims_validated"],
                 artifacts["quarantine"],
+                artifacts["claim_repairs"],
             ),
         )
     )

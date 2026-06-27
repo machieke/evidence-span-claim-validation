@@ -63,3 +63,9 @@ def test_repair_claims_suggests_exact_evidence_text(tmp_path: Path):
         invalid = runner.invoke(app, ["repair-claims", "--only", "unsupported_entities_introduced"])
         assert invalid.exit_code != 0
         assert "repair-claims supports reason codes" in invalid.stdout
+
+        report = runner.invoke(app, ["report"])
+        assert report.exit_code == 0, report.stdout
+        report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
+        assert "| Evidence repair suggestion rate | 100.0% |" in report_text
+        assert "| Evidence repair suggestions | 1 |" in report_text
