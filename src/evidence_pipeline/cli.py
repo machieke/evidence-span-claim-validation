@@ -56,7 +56,7 @@ from evidence_pipeline.spans.rule_highlighter import (
 from evidence_pipeline.validation.deterministic import VALIDATOR_VERSION, validate_raw_claims
 from evidence_pipeline.validation.pii import detect_pii, redact_pii
 from evidence_pipeline.validation.privacy import check_privacy_policy
-from evidence_pipeline.validation.repair import suggest_evidence_repairs
+from evidence_pipeline.validation.repair import REPAIR_REASON_CODES, suggest_evidence_repairs
 from evidence_pipeline.validation.review import record_claim_review
 from evidence_pipeline.validation.schema_repair import import_raw_claim_candidates
 
@@ -1035,13 +1035,19 @@ def dedupe_claims_command(
 
 @app.command("repair-claims")
 def repair_claims_command(
+    only: Optional[List[str]] = typer.Option(None, "--only", help="Only suggest repairs for this reason code. Repeatable."),
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="Repair suggestion JSONL output path."),
     config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
 ) -> None:
     """Write reviewable evidence_text repair suggestions for raw claims."""
     config = load_config(config_path)
     _init_paths(config)
-    result = suggest_evidence_repairs(config, output_path=output)
+    unknown_reasons = sorted(set(only or []) - REPAIR_REASON_CODES)
+    if unknown_reasons:
+        supported = ", ".join(sorted(REPAIR_REASON_CODES))
+        requested = ", ".join(unknown_reasons)
+        raise typer.BadParameter(f"repair-claims supports reason codes: {supported}; unsupported: {requested}")
+    result = suggest_evidence_repairs(config, output_path=output, only_reason_codes=only)
     typer.echo(f"{result.output_path} suggestions={result.suggestion_count}")
 
 

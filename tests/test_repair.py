@@ -50,7 +50,7 @@ def test_repair_claims_suggests_exact_evidence_text(tmp_path: Path):
         append_jsonl(Path("data/jsonl/spans.jsonl"), span)
         append_jsonl(Path("data/jsonl/claims.raw.jsonl"), claim)
 
-        result = runner.invoke(app, ["repair-claims"])
+        result = runner.invoke(app, ["repair-claims", "--only", "evidence_not_exact_substring"])
 
         assert result.exit_code == 0, result.stdout
         suggestions = [payload for _, payload in read_jsonl(Path("data/reports/claim_repairs.jsonl"))]
@@ -59,3 +59,7 @@ def test_repair_claims_suggests_exact_evidence_text(tmp_path: Path):
         assert suggestions[0]["original_evidence_text"] == "The vessel   Hope appears old."
         assert suggestions[0]["suggested_evidence_text"] == "The vessel Hope appears old."
         assert suggestions[0]["support_scope"] == "span"
+
+        invalid = runner.invoke(app, ["repair-claims", "--only", "unsupported_entities_introduced"])
+        assert invalid.exit_code != 0
+        assert "repair-claims supports reason codes" in invalid.stdout
