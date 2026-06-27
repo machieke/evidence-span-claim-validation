@@ -88,3 +88,43 @@ def test_check_privacy_flags_external_provider_for_sensitive_source(tmp_path: Pa
         assert "| privacy_policy_violations | 1 |" in report_text
         assert "## Privacy Policy Violations" in report_text
         assert "| non_local_provider_for_sensitive_source | 1 |" in report_text
+
+
+def test_check_privacy_uses_configured_local_providers(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        init = runner.invoke(app, ["init"])
+        assert init.exit_code == 0
+
+        Path("pipeline.yaml").write_text(
+            """
+privacy:
+  local_model_providers:
+    - deterministic
+    - openai
+""",
+            encoding="utf-8",
+        )
+        append_jsonl(
+            Path("data/jsonl/sources.jsonl"),
+            SourceRecord(
+                source_id="src_sensitive",
+                source_modality="chat",
+                source_file="sensitive.json",
+                metadata={"local_only": True},
+            ),
+        )
+        append_jsonl(
+            Path("data/jsonl/claims.raw.jsonl"),
+            _claim("claim_openai", "src_sensitive", "openai", "Alice called Bob."),
+        )
+
+        result = runner.invoke(app, ["check-privacy", "--config", "pipeline.yaml"])
+
+        assert result.exit_code == 0, result.stdout
+        assert "claims_checked=1" in result.stdout
+        assert "violations=0" in result.stdout
+        violations = [
+            payload
+            for _, payload in read_jsonl(Path("data/reports/privacy_policy_violations.jsonl"))
+        ]
+        assert violations == []
