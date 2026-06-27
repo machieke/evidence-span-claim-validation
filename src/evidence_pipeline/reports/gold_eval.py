@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from evidence_pipeline.config import PipelineConfig
-from evidence_pipeline.jsonl import ensure_parent, read_jsonl
+from evidence_pipeline.ids import stable_id
+from evidence_pipeline.jsonl import ensure_parent, read_jsonl, write_jsonl
 
 GoldKey = Tuple[str, str]
 
@@ -14,6 +15,7 @@ GoldKey = Tuple[str, str]
 @dataclass
 class GoldEvaluationResult:
     output_path: Path
+    metrics_path: Path
     metrics: Dict[str, object]
 
 
@@ -164,10 +166,30 @@ def _render_markdown(metrics: Dict[str, object], gold_path: Path) -> str:
     return "\n".join(lines)
 
 
-def write_gold_eval_report(config: PipelineConfig, gold_path: Path, output_path: Optional[Path] = None) -> GoldEvaluationResult:
+def _metrics_record(metrics: Dict[str, object], gold_path: Path) -> Dict[str, object]:
+    return {
+        "evaluation_id": stable_id(
+            "gold_eval",
+            {"gold_path": str(gold_path), "metrics": metrics},
+        ),
+        "gold_path": str(gold_path),
+        **metrics,
+        "schema_version": "gold.eval.v1",
+    }
+
+
+def write_gold_eval_report(
+    config: PipelineConfig,
+    gold_path: Path,
+    output_path: Optional[Path] = None,
+    metrics_path: Optional[Path] = None,
+) -> GoldEvaluationResult:
     if output_path is None:
         output_path = config.paths.reports_dir / "gold_eval.md"
+    if metrics_path is None:
+        metrics_path = config.paths.reports_dir / "gold_eval.jsonl"
     metrics = evaluate_gold(config, gold_path)
     ensure_parent(output_path)
     output_path.write_text(_render_markdown(metrics, gold_path), encoding="utf-8")
-    return GoldEvaluationResult(output_path=output_path, metrics=metrics)
+    write_jsonl(metrics_path, [_metrics_record(metrics, gold_path)])
+    return GoldEvaluationResult(output_path=output_path, metrics_path=metrics_path, metrics=metrics)
