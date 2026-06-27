@@ -972,7 +972,9 @@ def eval_gold_command(
         raise typer.BadParameter(str(exc))
     typer.echo(
         f"{result.output_path} accepted_precision={result.metrics['accepted_precision']} "
-        f"accepted_recall={result.metrics['accepted_recall']}"
+        f"accepted_recall={result.metrics['accepted_recall']} "
+        f"quarantine_precision={result.metrics['quarantine_precision']} "
+        f"quarantine_recall={result.metrics['quarantine_recall']}"
     )
 
 

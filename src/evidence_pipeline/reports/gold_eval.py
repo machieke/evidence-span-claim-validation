@@ -82,6 +82,8 @@ def evaluate_gold(config: PipelineConfig, gold_path: Path) -> Dict[str, object]:
     accepted_false_positives = accepted - expected_accepted
     accepted_missing = expected_accepted - accepted
     quarantine_matches = quarantined & expected_quarantined
+    quarantine_false_positives = quarantined - expected_quarantined
+    quarantine_missing = expected_quarantined - quarantined
 
     return {
         "gold_claims": len(gold_claims),
@@ -95,8 +97,20 @@ def evaluate_gold(config: PipelineConfig, gold_path: Path) -> Dict[str, object]:
         "expected_quarantined": len(expected_quarantined),
         "produced_quarantined": len(quarantined),
         "quarantine_matches": len(quarantine_matches),
+        "quarantine_false_positives": len(quarantine_false_positives),
+        "quarantine_missing": len(quarantine_missing),
+        "quarantine_precision": _rate(len(quarantine_matches), len(quarantined)),
+        "quarantine_recall": _rate(len(quarantine_matches), len(expected_quarantined)),
         "missing_keys": sorted([{"evidence_id": key[0], "evidence_text": key[1]} for key in accepted_missing], key=str),
         "false_positive_keys": sorted([{"evidence_id": key[0], "evidence_text": key[1]} for key in accepted_false_positives], key=str),
+        "missing_quarantine_keys": sorted(
+            [{"evidence_id": key[0], "evidence_text": key[1]} for key in quarantine_missing],
+            key=str,
+        ),
+        "false_positive_quarantine_keys": sorted(
+            [{"evidence_id": key[0], "evidence_text": key[1]} for key in quarantine_false_positives],
+            key=str,
+        ),
     }
 
 
@@ -127,9 +141,18 @@ def _render_markdown(metrics: Dict[str, object], gold_path: Path) -> str:
         f"| Expected quarantined | {metrics['expected_quarantined']} |",
         f"| Produced quarantined | {metrics['produced_quarantined']} |",
         f"| Quarantine matches | {metrics['quarantine_matches']} |",
+        f"| Quarantine precision | {_format_rate(metrics['quarantine_precision'])} |",
+        f"| Quarantine recall | {_format_rate(metrics['quarantine_recall'])} |",
+        f"| Quarantine false positives | {metrics['quarantine_false_positives']} |",
+        f"| Quarantine missing | {metrics['quarantine_missing']} |",
         "",
     ]
-    for title, key in (("Missing Expected Accepted Claims", "missing_keys"), ("Accepted False Positives", "false_positive_keys")):
+    for title, key in (
+        ("Missing Expected Accepted Claims", "missing_keys"),
+        ("Accepted False Positives", "false_positive_keys"),
+        ("Missing Expected Quarantined Claims", "missing_quarantine_keys"),
+        ("Quarantine False Positives", "false_positive_quarantine_keys"),
+    ):
         lines.extend([f"## {title}", ""])
         items = metrics[key]
         if not items:
