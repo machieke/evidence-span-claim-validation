@@ -90,6 +90,11 @@ def test_chat_pipeline_is_idempotent(tmp_path: Path):
         assert trace_payload["raw_claim"]["claim_id"] == raw_claims[0]["claim_id"]
         assert trace_payload["evidence"]["evidence_id"] == raw_claims[0]["evidence_id"]
         assert trace_payload["source"]["source_modality"] == "chat"
+        assert [job["stage"] for job in trace_payload["jobs"]] == [
+            "extract_claims",
+            "validate_claims",
+            "normalize_claims",
+        ]
 
         graph = runner.invoke(app, ["export-graph"])
         assert graph.exit_code == 0, graph.stdout

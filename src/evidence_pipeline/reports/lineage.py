@@ -23,12 +23,39 @@ def _all_by(rows: List[dict], key: str, value: Any) -> List[dict]:
     return [row for row in rows if row.get(key) == value]
 
 
+def _jobs_for_claim(jobs: List[dict], anchor: Optional[dict], claim_id: str) -> List[dict]:
+    if anchor is None:
+        return []
+    source_id = anchor.get("source_id")
+    modality = anchor.get("source_modality")
+    matched = []
+    for job in jobs:
+        stage = job.get("stage")
+        input_ids = set(job.get("input_record_ids") or [])
+        if claim_id in input_ids:
+            matched.append(job)
+            continue
+        if source_id and job.get("source_id") == source_id:
+            matched.append(job)
+            continue
+        if stage == "extract_claims" and {f"modality:{modality}", "modality:all"} & input_ids:
+            matched.append(job)
+            continue
+        if stage == "validate_claims" and "claims_raw" in input_ids:
+            matched.append(job)
+            continue
+        if stage == "normalize_claims" and "claims_validated" in input_ids:
+            matched.append(job)
+    return matched
+
+
 def trace_claim(config: PipelineConfig, claim_id: str) -> Dict[str, Any]:
     paths = config.jsonl_paths()
     raw_claims = _rows(paths["claims_raw"])
     validated_claims = _rows(paths["claims_validated"])
     normalized_claims = _rows(paths["claims_normalized"])
     validations = _rows(paths["validations"])
+    jobs = _rows(paths["jobs"])
     review_decisions = _rows(paths["review_decisions"])
     audit_events = _rows(paths["audit_events"])
     quarantine = _rows(paths["quarantine"])
@@ -46,6 +73,7 @@ def trace_claim(config: PipelineConfig, claim_id: str) -> Dict[str, Any]:
     quarantined = _all_by(quarantine, "claim_id", claim_id)
 
     anchor = raw_claim or validated_claim or (normalized[0] if normalized else None)
+    claim_jobs = _jobs_for_claim(jobs, anchor, claim_id)
     evidence = None
     span = None
     chunk = None
@@ -68,6 +96,7 @@ def trace_claim(config: PipelineConfig, claim_id: str) -> Dict[str, Any]:
         "span": span,
         "raw_claim": raw_claim,
         "validations": claim_validations,
+        "jobs": claim_jobs,
         "review_decisions": claim_reviews,
         "audit_events": claim_audit_events,
         "validated_claim": validated_claim,
