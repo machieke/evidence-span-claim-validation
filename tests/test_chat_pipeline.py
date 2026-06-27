@@ -82,6 +82,13 @@ def test_chat_pipeline_is_idempotent(tmp_path: Path):
         assert len(list(read_jsonl(Path("data/jsonl/claims.validated.jsonl")))) == 3
         assert len(list(read_jsonl(Path("data/jsonl/claims.normalized.jsonl")))) == 3
 
+        graph = runner.invoke(app, ["export-graph"])
+        assert graph.exit_code == 0, graph.stdout
+        edges = [payload for _, payload in read_jsonl(Path("data/reports/claim_graph.jsonl"))]
+        assert len(edges) == 3
+        assert all(edge["schema_version"] == "graph.edge.v1" for edge in edges)
+        assert {edge["predicate"] for edge in edges} >= {"asserts", "asks_whether"}
+
         report = runner.invoke(app, ["report"])
         assert report.exit_code == 0, report.stdout
         report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")

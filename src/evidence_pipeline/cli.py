@@ -23,6 +23,7 @@ from evidence_pipeline.ingest.pdf_evidence import build_pdf_evidence
 from evidence_pipeline.ids import sha256_file, stable_id
 from evidence_pipeline.jsonl import JSONLDecodeError, append_jsonl, find_record, read_jsonl
 from evidence_pipeline.normalization.claims import normalize_claims
+from evidence_pipeline.normalization.graph_export import export_graph_jsonl
 from evidence_pipeline.reports.summary import write_summary_report
 from evidence_pipeline.schemas import SCHEMA_REGISTRY, EvidenceRecord, SourceModality, SourceRecord
 from evidence_pipeline.spans.image_region_selector import propose_image_regions
@@ -404,6 +405,21 @@ def normalize_claims_command(
     _init_paths(config)
     result = normalize_claims(config, source_id=source_id, claim_ids=claim_id)
     typer.echo(f"claims_normalized={result.created} claims_skipped={result.skipped}")
+
+
+@app.command("export-graph")
+def export_graph_command(
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Graph JSONL output path."),
+    format: str = typer.Option("jsonl", "--format", help="Export format. Currently only jsonl is supported."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Export normalized claims as graph-style JSONL edges."""
+    if format != "jsonl":
+        raise typer.BadParameter("only jsonl graph export is currently supported")
+    config = load_config(config_path)
+    _init_paths(config)
+    result = export_graph_jsonl(config, output_path=output)
+    typer.echo(f"{result.output_path} edges={result.edge_count}")
 
 
 @app.command("validate-jsonl")
