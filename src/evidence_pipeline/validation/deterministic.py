@@ -116,7 +116,10 @@ def validate_claim_deterministically(
     support_texts = _support_texts(claim, evidence, span)
     support_text = support_texts[0] if support_texts else ""
     evidence_exact_match = None
-    if claim.source_modality != "image":
+    requires_exact_evidence = claim.source_modality != "image" or (
+        evidence is not None and evidence.evidence_type == "ocr_text_span"
+    )
+    if requires_exact_evidence:
         if not claim.evidence_text:
             errors.append("missing_evidence_text")
             evidence_exact_match = False
@@ -132,6 +135,7 @@ def validate_claim_deterministically(
     errors.extend(attribution_errors)
     attribution_preserved = not attribution_errors
     errors.extend(_audio_risk_errors(claim, evidence, span))
+    errors.extend(_ocr_risk_errors(claim, evidence, span))
 
     claim_text = _claim_text_for_checks(claim)
     support_for_semantics = claim.evidence_text or support_text
@@ -210,6 +214,15 @@ def _audio_risk_errors(claim: RawClaimRecord, evidence: Optional[EvidenceRecord]
         if reason_code in risk_flags:
             errors.append(reason_code)
     return errors
+
+
+def _ocr_risk_errors(claim: RawClaimRecord, evidence: Optional[EvidenceRecord], span: Optional[SpanRecord]) -> List[str]:
+    if evidence is None or evidence.evidence_type != "ocr_text_span":
+        return []
+    risk_flags = set(_combined_risk_flags(claim, evidence, span))
+    if "low_ocr_confidence" in risk_flags:
+        return ["low_ocr_confidence"]
+    return []
 
 
 def _validation_id(claim_id: str) -> str:

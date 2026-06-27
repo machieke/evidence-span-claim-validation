@@ -79,6 +79,9 @@ Image evidence pipeline:
 
 ```bash
 PYTHONPATH=src python3 -m evidence_pipeline ingest-images data/raw/images/
+PYTHONPATH=src python3 -m evidence_pipeline ingest-image-ocr data/raw/images/ocr.json
+PYTHONPATH=src python3 -m evidence_pipeline chunk-image-ocr
+PYTHONPATH=src python3 -m evidence_pipeline detect-image-ocr-spans
 PYTHONPATH=src python3 -m evidence_pipeline propose-image-regions --patch-size 224 --stride 112
 PYTHONPATH=src python3 -m evidence_pipeline build-image-evidence
 PYTHONPATH=src python3 -m evidence_pipeline embed-image-regions

@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from evidence_pipeline.chunking.chat_chunker import chunk_chat
 from evidence_pipeline.chunking.audio_chunker import chunk_audio
+from evidence_pipeline.chunking.image_ocr_chunker import chunk_image_ocr
 from evidence_pipeline.chunking.pdf_chunker import chunk_pdf
 from evidence_pipeline.config import PipelineConfig, load_config
 from evidence_pipeline.extraction.claim_extractor import (
@@ -24,6 +25,7 @@ from evidence_pipeline.ingest.audio import ingest_audio_transcript
 from evidence_pipeline.ingest.audio_evidence import build_audio_evidence
 from evidence_pipeline.ingest.image import ingest_images
 from evidence_pipeline.ingest.image_evidence import build_image_cluster_evidence, build_image_evidence
+from evidence_pipeline.ingest.image_ocr import ingest_image_ocr
 from evidence_pipeline.ingest.pdf import ingest_pdf
 from evidence_pipeline.ingest.pdf_evidence import build_pdf_evidence
 from evidence_pipeline.ids import sha256_file, stable_id
@@ -45,7 +47,12 @@ from evidence_pipeline.spans.image_region_clusterer import (
     cluster_image_regions,
 )
 from evidence_pipeline.spans.image_region_selector import propose_image_regions
-from evidence_pipeline.spans.rule_highlighter import detect_audio_spans, detect_chat_spans, detect_pdf_spans
+from evidence_pipeline.spans.rule_highlighter import (
+    detect_audio_spans,
+    detect_chat_spans,
+    detect_image_ocr_spans,
+    detect_pdf_spans,
+)
 from evidence_pipeline.validation.deterministic import VALIDATOR_VERSION, validate_raw_claims
 from evidence_pipeline.validation.pii import detect_pii, redact_pii
 from evidence_pipeline.validation.privacy import check_privacy_policy
@@ -375,6 +382,23 @@ def ingest_images_command(
     )
 
 
+@app.command("ingest-image-ocr")
+def ingest_image_ocr_command(
+    ocr_file: Path = typer.Argument(..., help="OCR sidecar JSON file."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Ingest image OCR sidecar text as ocr_text_span evidence."""
+    config = load_config(config_path)
+    _init_paths(config)
+    if not ocr_file.exists() or not ocr_file.is_file():
+        raise typer.BadParameter(f"OCR file does not exist: {ocr_file}")
+    try:
+        result = ingest_image_ocr(ocr_file, config)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc))
+    typer.echo(f"ocr_evidence_created={result.created} ocr_evidence_skipped={result.skipped}")
+
+
 @app.command("propose-image-regions")
 def propose_image_regions_command(
     source_id: Optional[str] = typer.Option(None, "--source-id", help="Only propose regions for this source."),
@@ -488,6 +512,30 @@ def build_image_cluster_evidence_command(
     _init_paths(config)
     result = build_image_cluster_evidence(config, source_id=source_id)
     typer.echo(f"evidence_created={result.created} evidence_skipped={result.skipped}")
+
+
+@app.command("chunk-image-ocr")
+def chunk_image_ocr_command(
+    source_id: Optional[str] = typer.Option(None, "--source-id", help="Only chunk OCR evidence for this source."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Create text chunks from image OCR evidence."""
+    config = load_config(config_path)
+    _init_paths(config)
+    result = chunk_image_ocr(config, source_id=source_id)
+    typer.echo(f"chunks_created={result.created} chunks_skipped={result.skipped}")
+
+
+@app.command("detect-image-ocr-spans")
+def detect_image_ocr_spans_command(
+    source_id: Optional[str] = typer.Option(None, "--source-id", help="Only detect OCR spans for this source."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Detect claim-bearing spans in image OCR evidence."""
+    config = load_config(config_path)
+    _init_paths(config)
+    result = detect_image_ocr_spans(config, source_id=source_id)
+    typer.echo(f"spans_created={result.created} spans_skipped={result.skipped}")
 
 
 @app.command("build-evidence")

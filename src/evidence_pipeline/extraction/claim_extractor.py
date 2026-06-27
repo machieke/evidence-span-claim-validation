@@ -14,8 +14,9 @@ from evidence_pipeline.validation.text_support import contains_negation, contain
 RULE_EXTRACTOR_VERSION = "rules.v1"
 IMAGE_REGION_EXTRACTOR_VERSION = "image_region.rules.v1"
 IMAGE_CLUSTER_EXTRACTOR_VERSION = "image_cluster.rules.v1"
+IMAGE_OCR_EXTRACTOR_VERSION = "image_ocr.rules.v1"
 SUPPORTED_MODALITIES = {"all", "chat", "pdf", "audio", "image"}
-TEXT_SPAN_MODALITIES = {"chat", "pdf", "audio"}
+TEXT_SPAN_MODALITIES = {"chat", "pdf", "audio", "image"}
 
 
 @dataclass
@@ -72,6 +73,8 @@ def _attribution(span: SpanRecord, evidence: EvidenceRecord) -> Dict[str, Option
         return {"type": "speaker", "agent": str(agent) if agent is not None else None}
     if span.source_modality == "pdf":
         return {"type": "document", "agent": evidence.source_id}
+    if span.source_modality == "image" and evidence.evidence_type == "ocr_text_span":
+        return {"type": "model", "agent": str(evidence.provenance.get("ocr_model") or "unknown_ocr_model")}
     return {"type": "unknown", "agent": None}
 
 
@@ -90,6 +93,8 @@ def _source_faithful_claim(span: SpanRecord) -> str:
         return _audio_claim_text(span)
     if span.source_modality == "pdf":
         return _pdf_claim_text(span)
+    if span.source_modality == "image":
+        return f"OCR text states: {span.text}"
     return f"The source states: {span.text}"
 
 
@@ -102,19 +107,20 @@ def _raw_claim_from_span(span: SpanRecord, evidence: EvidenceRecord) -> RawClaim
         raise ValueError("text span is required for deterministic extraction")
     risk_flags = _risk_flags(span, evidence)
     context_dependent = "context_dependent_coreference" in risk_flags and bool(span.context_text)
+    extractor = _extractor_for_span(span, evidence)
     return RawClaimRecord(
-        claim_id=_claim_id(span, RULE_EXTRACTOR_VERSION),
+        claim_id=_claim_id(span, extractor),
         source_id=span.source_id,
         source_modality=span.source_modality,
         span_id=span.span_id,
         evidence_id=span.evidence_id,
-        claim_type="attributed_text_claim",
+        claim_type=_claim_type_for_span(span, evidence),
         source_faithful_claim=_source_faithful_claim(span),
         subject=None,
         predicate=None,
         object=None,
         quantity=None,
-        attributes={"extractor": RULE_EXTRACTOR_VERSION},
+        attributes={"extractor": extractor},
         modality=_modality_for_text(span.text),
         evidence_text=span.text,
         context_dependent=context_dependent,
@@ -124,12 +130,24 @@ def _raw_claim_from_span(span: SpanRecord, evidence: EvidenceRecord) -> RawClaim
         confidence=span.score if span.score is not None else 0.5,
         model={
             "provider": "deterministic",
-            "model": RULE_EXTRACTOR_VERSION,
+            "model": extractor,
             "prompt_version": None,
         },
         support_status="raw_extracted",
         risk_flags=risk_flags,
     )
+
+
+def _claim_type_for_span(span: SpanRecord, evidence: EvidenceRecord) -> str:
+    if span.source_modality == "image" and evidence.evidence_type == "ocr_text_span":
+        return "ocr_text_claim"
+    return "attributed_text_claim"
+
+
+def _extractor_for_span(span: SpanRecord, evidence: EvidenceRecord) -> str:
+    if span.source_modality == "image" and evidence.evidence_type == "ocr_text_span":
+        return IMAGE_OCR_EXTRACTOR_VERSION
+    return RULE_EXTRACTOR_VERSION
 
 
 def _raw_image_claim_from_evidence(evidence: EvidenceRecord) -> RawClaimRecord:
@@ -288,8 +306,6 @@ def extract_claims_from_spans(
             append_jsonl(paths["claims_raw"], record)
             existing_claim_ids.add(record.claim_id)
             created += 1
-        if modality == "image":
-            return ClaimExtractionResult(created=created, skipped=skipped)
 
     for _, span in read_jsonl_records(paths["spans"], SpanRecord):
         if span.label != "claim_bearing":
@@ -303,6 +319,8 @@ def extract_claims_from_spans(
         evidence = evidence_by_id.get(span.evidence_id)
         if evidence is None:
             skipped += 1
+            continue
+        if span.source_modality == "image" and evidence.evidence_type != "ocr_text_span":
             continue
         record = _raw_claim_from_span(span, evidence)
         if record.claim_id in existing_claim_ids:
