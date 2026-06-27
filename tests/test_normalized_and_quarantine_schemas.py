@@ -1,3 +1,6 @@
+import pytest
+from pydantic import ValidationError
+
 from evidence_pipeline.schemas.claims import NormalizedClaimRecord
 from evidence_pipeline.schemas.validation import QuarantineRecord
 
@@ -29,3 +32,14 @@ def test_quarantine_record_has_machine_readable_reasons():
     )
 
     assert record.reason_codes == ["evidence_not_exact_substring"]
+
+
+def test_quarantine_record_rejects_empty_reasons():
+    with pytest.raises(ValidationError):
+        QuarantineRecord(
+            quarantine_id="q_1",
+            record_type="claim",
+            record_id="claim_1",
+            claim_id="claim_1",
+            stage="validate_claims",
+        )

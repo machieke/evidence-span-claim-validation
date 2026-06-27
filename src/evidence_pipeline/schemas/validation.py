@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from evidence_pipeline.schemas.base import StrictModel, utc_now
 
@@ -59,3 +59,9 @@ class QuarantineRecord(StrictModel):
     payload: Dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
     schema_version: str = "quarantine.v1"
+
+    @model_validator(mode="after")
+    def validate_reason_codes(self) -> "QuarantineRecord":
+        if not self.reason_codes:
+            raise ValueError("quarantine records require at least one reason code")
+        return self
