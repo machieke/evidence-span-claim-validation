@@ -32,6 +32,7 @@ from evidence_pipeline.schemas import SCHEMA_REGISTRY, EvidenceRecord, SourceMod
 from evidence_pipeline.spans.image_region_selector import propose_image_regions
 from evidence_pipeline.spans.rule_highlighter import detect_audio_spans, detect_chat_spans, detect_pdf_spans
 from evidence_pipeline.validation.deterministic import validate_raw_claims
+from evidence_pipeline.validation.repair import suggest_evidence_repairs
 
 app = typer.Typer(help="Evidence-span claim validation pipeline.")
 
@@ -591,6 +592,18 @@ def dedupe_claims_command(
     _init_paths(config)
     result = dedupe_normalized_claims(config, output_path=output, include_singletons=include_singletons)
     typer.echo(f"{result.output_path} groups={result.group_count}")
+
+
+@app.command("repair-claims")
+def repair_claims_command(
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Repair suggestion JSONL output path."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Write reviewable evidence_text repair suggestions for raw claims."""
+    config = load_config(config_path)
+    _init_paths(config)
+    result = suggest_evidence_repairs(config, output_path=output)
+    typer.echo(f"{result.output_path} suggestions={result.suggestion_count}")
 
 
 @app.command("validate-jsonl")
