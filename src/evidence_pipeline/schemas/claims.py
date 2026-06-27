@@ -155,3 +155,11 @@ class NormalizedClaimRecord(StrictModel):
     normalized_claim: Dict[str, Any]
     normalization: NormalizationDetails = Field(default_factory=NormalizationDetails)
     schema_version: str = "claim.normalized.v1"
+
+    @model_validator(mode="after")
+    def validate_normalized_claim_shape(self) -> "NormalizedClaimRecord":
+        required_keys = {"subject", "predicate", "object"}
+        missing = sorted(required_keys - set(self.normalized_claim))
+        if missing:
+            raise ValueError(f"normalized_claim missing required keys: {', '.join(missing)}")
+        return self

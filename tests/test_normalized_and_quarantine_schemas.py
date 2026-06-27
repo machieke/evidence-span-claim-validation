@@ -21,6 +21,20 @@ def test_normalized_claim_links_to_validated_claim_and_evidence():
     assert record.schema_version == "claim.normalized.v1"
 
 
+def test_normalized_claim_requires_core_proposition_keys():
+    with pytest.raises(ValidationError):
+        NormalizedClaimRecord(
+            normalized_claim_id="nclaim_1",
+            claim_id="claim_1",
+            source_id="src_1",
+            evidence_id="ev_1",
+            normalized_claim={
+                "subject": "entity:vessel_hope",
+                "predicate": "appears_condition",
+            },
+        )
+
+
 def test_quarantine_record_has_machine_readable_reasons():
     record = QuarantineRecord(
         quarantine_id="q_1",
