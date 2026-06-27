@@ -174,3 +174,8 @@ def test_validate_claims_quarantines_unsupported_named_entities(tmp_path: Path):
         assert validations[0]["metadata"]["validation"]["introduced_entities"] == ["Boston"]
         assert quarantined[0]["reason_codes"] == ["unsupported_entities_introduced"]
         assert quarantined[0]["warnings"] == ["unsupported_entities_introduced"]
+
+        report = runner.invoke(app, ["report"])
+        assert report.exit_code == 0, report.stdout
+        report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
+        assert "| Unsupported entity validation rate | 100.0% |" in report_text

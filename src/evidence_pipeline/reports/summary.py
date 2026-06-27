@@ -68,7 +68,16 @@ def _rate(numerator: int, denominator: int) -> str:
     return f"{(numerator / denominator) * 100:.1f}%"
 
 
-def _quality_rows(claims_raw: List[dict], claims_validated: List[dict], quarantine: List[dict]) -> List[Tuple[str, object]]:
+def _has_validation_reason(row: dict, reason_code: str) -> bool:
+    return reason_code in row.get("errors", []) or reason_code in row.get("warnings", [])
+
+
+def _quality_rows(
+    claims_raw: List[dict],
+    validations: List[dict],
+    claims_validated: List[dict],
+    quarantine: List[dict],
+) -> List[Tuple[str, object]]:
     exact_matches = 0
     text_validated = 0
     for claim in claims_validated:
@@ -78,9 +87,15 @@ def _quality_rows(claims_raw: List[dict], claims_validated: List[dict], quaranti
         validation = claim.get("validation") or {}
         if validation.get("evidence_exact_match") is True:
             exact_matches += 1
+    unsupported_entities = sum(
+        1
+        for validation in validations
+        if _has_validation_reason(validation, "unsupported_entities_introduced")
+    )
     return [
         ("Accepted text claim exact-evidence rate", _rate(exact_matches, text_validated)),
         ("Raw claim quarantine rate", _rate(len(quarantine), len(claims_raw))),
+        ("Unsupported entity validation rate", _rate(unsupported_entities, len(validations))),
         ("Accepted claims", len(claims_validated)),
         ("Quarantined claims", len(quarantine)),
     ]
@@ -144,7 +159,12 @@ def render_summary_markdown(config: PipelineConfig) -> Tuple[str, Dict[str, int]
     lines.extend(
         _table(
             ("Metric", "Value"),
-            _quality_rows(artifacts["claims_raw"], artifacts["claims_validated"], artifacts["quarantine"]),
+            _quality_rows(
+                artifacts["claims_raw"],
+                artifacts["validations"],
+                artifacts["claims_validated"],
+                artifacts["quarantine"],
+            ),
         )
     )
     lines.append("")
