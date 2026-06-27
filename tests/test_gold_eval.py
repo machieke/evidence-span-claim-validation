@@ -108,6 +108,9 @@ def test_gold_eval_reports_quarantine_precision_and_recall(tmp_path: Path):
         assert summary.exit_code == 0, summary.stdout
         summary_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
         assert "| gold_eval | 1 |" in summary_text
+        assert "| Gold accepted precision | 100.0% |" in summary_text
+        assert "| Gold quarantine precision | 50.0% |" in summary_text
+        assert "| Gold quarantine recall | 50.0% |" in summary_text
 
         export = runner.invoke(app, ["export-sqlite"])
         assert export.exit_code == 0, export.stdout

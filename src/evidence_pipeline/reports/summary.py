@@ -196,6 +196,12 @@ def _rate(numerator: int, denominator: int) -> str:
     return f"{(numerator / denominator) * 100:.1f}%"
 
 
+def _format_optional_rate(value: object) -> str:
+    if value is None:
+        return "n/a"
+    return f"{float(value) * 100:.1f}%"
+
+
 def _has_validation_reason(row: dict, reason_code: str) -> bool:
     return reason_code in row.get("errors", []) or reason_code in row.get("warnings", [])
 
@@ -206,6 +212,7 @@ def _quality_rows(
     claims_validated: List[dict],
     quarantine: List[dict],
     repair_suggestions: List[dict],
+    gold_evaluations: List[dict],
 ) -> List[Tuple[str, object]]:
     exact_matches = 0
     text_validated = 0
@@ -221,7 +228,7 @@ def _quality_rows(
         for validation in validations
         if _has_validation_reason(validation, "unsupported_entities_introduced")
     )
-    return [
+    rows = [
         ("Accepted text claim exact-evidence rate", _rate(exact_matches, text_validated)),
         ("Raw claim quarantine rate", _rate(len(quarantine), len(claims_raw))),
         ("Unsupported entity validation rate", _rate(unsupported_entities, len(validations))),
@@ -230,6 +237,23 @@ def _quality_rows(
         ("Quarantined claims", len(quarantine)),
         ("Evidence repair suggestions", len(repair_suggestions)),
     ]
+    if gold_evaluations:
+        latest_gold = gold_evaluations[-1]
+        rows.extend(
+            [
+                (
+                    "Gold accepted precision",
+                    _format_optional_rate(latest_gold.get("accepted_precision")),
+                ),
+                ("Gold accepted recall", _format_optional_rate(latest_gold.get("accepted_recall"))),
+                (
+                    "Gold quarantine precision",
+                    _format_optional_rate(latest_gold.get("quarantine_precision")),
+                ),
+                ("Gold quarantine recall", _format_optional_rate(latest_gold.get("quarantine_recall"))),
+            ]
+        )
+    return rows
 
 
 def render_summary_markdown(config: PipelineConfig) -> Tuple[str, Dict[str, int]]:
@@ -362,6 +386,7 @@ def render_summary_markdown(config: PipelineConfig) -> Tuple[str, Dict[str, int]
                 artifacts["claims_validated"],
                 artifacts["quarantine"],
                 artifacts["claim_repairs"],
+                artifacts["gold_eval"],
             ),
         )
     )
