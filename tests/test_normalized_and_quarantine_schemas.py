@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from evidence_pipeline.schemas.claims import NormalizedClaimRecord
+from evidence_pipeline.schemas.claims import ClaimValidationSummary, NormalizedClaimRecord, ValidatedClaimRecord
 from evidence_pipeline.schemas.validation import QuarantineRecord, ValidationRecord
 
 
@@ -61,3 +61,19 @@ def test_rejected_validation_record_requires_errors():
         status="accepted_extracted",
     )
     assert accepted.errors == []
+
+
+def test_accepted_validated_claim_requires_valid_summary():
+    with pytest.raises(ValidationError):
+        ValidatedClaimRecord(
+            claim_id="claim_1",
+            source_id="src_1",
+            source_modality="chat",
+            evidence_id="ev_1",
+            source_faithful_claim="The speaker asserted: Hope had three masts.",
+            evidence_text="Hope had three masts.",
+            modality="asserted",
+            truth_status="speaker_asserted_unverified",
+            support_status="accepted_extracted",
+            validation=ClaimValidationSummary(deterministic_valid=False),
+        )

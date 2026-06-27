@@ -118,6 +118,8 @@ class ValidatedClaimRecord(StrictModel):
     def validate_status(self) -> "ValidatedClaimRecord":
         if self.support_status not in {"accepted_extracted", "needs_review", "quarantined", "semantic_valid", "deterministic_valid"}:
             raise ValueError("validated claims require a validation-stage support_status")
+        if self.support_status == "accepted_extracted" and not self.validation.deterministic_valid:
+            raise ValueError("accepted extracted claims require deterministic_valid validation")
         return self
 
 
