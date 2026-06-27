@@ -44,3 +44,23 @@ def test_validate_jsonl_reports_valid_count(tmp_path: Path):
 
         assert result.exit_code == 0
         assert "valid 1 records" in result.stdout
+
+
+def test_report_writes_html_summary(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        init = runner.invoke(app, ["init"])
+        assert init.exit_code == 0
+
+        result = runner.invoke(app, ["report", "--format", "html"])
+
+        assert result.exit_code == 0, result.stdout
+        assert "data/reports/extraction_summary.html" in result.stdout
+        output = Path("data/reports/extraction_summary.html").read_text(encoding="utf-8")
+        assert "<!doctype html>" in output
+        assert "<h1>Evidence Pipeline Extraction Summary</h1>" in output
+        assert "<h2>Artifact Counts</h2>" in output
+        assert "<table>" in output
+
+        invalid = runner.invoke(app, ["report", "--format", "pdf"])
+        assert invalid.exit_code != 0
+        assert "report format must be markdown or html" in invalid.stdout

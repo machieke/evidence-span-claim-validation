@@ -860,13 +860,17 @@ def import_raw_claims_command(
 
 @app.command("report")
 def report_command(
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Markdown report output path."),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Report output path."),
+    format: str = typer.Option("markdown", "--format", help="Report format: markdown or html."),
     config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
 ) -> None:
-    """Write a Markdown extraction summary report."""
+    """Write an extraction summary report."""
     config = load_config(config_path)
     _init_paths(config)
-    result = write_summary_report(config, output_path=output)
+    try:
+        result = write_summary_report(config, output_path=output, output_format=format)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc))
     typer.echo(str(result.output_path))
 
 

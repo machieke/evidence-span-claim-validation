@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -67,6 +68,79 @@ def _table(headers: Tuple[str, ...], rows: Iterable[Tuple[object, ...]]) -> List
     for row in rows:
         lines.append("| " + " | ".join(str(value) for value in row) + " |")
     return lines
+
+
+def _markdown_table_cells(line: str) -> List[str]:
+    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+
+
+def _markdown_to_html(markdown: str) -> str:
+    body: List[str] = []
+    lines = markdown.splitlines()
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if not line:
+            index += 1
+            continue
+        if line.startswith("# "):
+            body.append(f"<h1>{html.escape(line[2:])}</h1>")
+            index += 1
+            continue
+        if line.startswith("## "):
+            body.append(f"<h2>{html.escape(line[3:])}</h2>")
+            index += 1
+            continue
+        if line == "_None_":
+            body.append("<p><em>None</em></p>")
+            index += 1
+            continue
+        if line.startswith("| "):
+            headers = _markdown_table_cells(line)
+            index += 2
+            rows = []
+            while index < len(lines) and lines[index].startswith("| "):
+                rows.append(_markdown_table_cells(lines[index]))
+                index += 1
+            body.append("<table>")
+            body.append(
+                "<thead><tr>"
+                + "".join(f"<th>{html.escape(header)}</th>" for header in headers)
+                + "</tr></thead>"
+            )
+            body.append("<tbody>")
+            for row in rows:
+                body.append(
+                    "<tr>"
+                    + "".join(f"<td>{html.escape(cell)}</td>" for cell in row)
+                    + "</tr>"
+                )
+            body.append("</tbody></table>")
+            continue
+        body.append(f"<p>{html.escape(line)}</p>")
+        index += 1
+
+    return "\n".join(
+        [
+            "<!doctype html>",
+            '<html lang="en">',
+            "<head>",
+            '<meta charset="utf-8">',
+            "<title>Evidence Pipeline Extraction Summary</title>",
+            "<style>",
+            "body{font-family:Arial,sans-serif;line-height:1.45;margin:2rem;max-width:1100px;}",
+            "table{border-collapse:collapse;margin:1rem 0;width:100%;}",
+            "th,td{border:1px solid #d0d7de;padding:0.4rem 0.6rem;text-align:left;}",
+            "th{background:#f6f8fa;}",
+            "</style>",
+            "</head>",
+            "<body>",
+            *body,
+            "</body>",
+            "</html>",
+            "",
+        ]
+    )
 
 
 def _counter_table(title: str, key_header: str, counter: Counter) -> List[str]:
@@ -217,10 +291,33 @@ def render_summary_markdown(config: PipelineConfig) -> Tuple[str, Dict[str, int]
     return "\n".join(lines), record_counts
 
 
-def write_summary_report(config: PipelineConfig, output_path: Optional[Path] = None) -> SummaryReportResult:
-    if output_path is None:
-        output_path = config.paths.reports_dir / "extraction_summary.md"
+def render_summary_html(config: PipelineConfig) -> Tuple[str, Dict[str, int]]:
     markdown, record_counts = render_summary_markdown(config)
+    return _markdown_to_html(markdown), record_counts
+
+
+def _normalize_report_format(output_format: str) -> str:
+    normalized = output_format.strip().lower()
+    if normalized in {"markdown", "md"}:
+        return "markdown"
+    if normalized == "html":
+        return "html"
+    raise ValueError("report format must be markdown or html")
+
+
+def write_summary_report(
+    config: PipelineConfig,
+    output_path: Optional[Path] = None,
+    output_format: str = "markdown",
+) -> SummaryReportResult:
+    normalized_format = _normalize_report_format(output_format)
+    if output_path is None:
+        filename = "extraction_summary.html" if normalized_format == "html" else "extraction_summary.md"
+        output_path = config.paths.reports_dir / filename
+    if normalized_format == "html":
+        rendered, record_counts = render_summary_html(config)
+    else:
+        rendered, record_counts = render_summary_markdown(config)
     ensure_parent(output_path)
-    output_path.write_text(markdown, encoding="utf-8")
+    output_path.write_text(rendered, encoding="utf-8")
     return SummaryReportResult(output_path=output_path, record_counts=record_counts)
