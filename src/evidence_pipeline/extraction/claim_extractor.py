@@ -49,6 +49,12 @@ def _chat_claim_text(span: SpanRecord) -> str:
     return f"The speaker asserted: {span.text}"
 
 
+def _audio_claim_text(span: SpanRecord) -> str:
+    if (span.text or "").strip().endswith("?"):
+        return f"The speaker asked: {span.text}"
+    return f"The speaker asserted: {span.text}"
+
+
 def _pdf_claim_text(span: SpanRecord) -> str:
     return f"The document states: {span.text}"
 
@@ -76,6 +82,8 @@ def _truth_status(span: SpanRecord) -> str:
 def _source_faithful_claim(span: SpanRecord) -> str:
     if span.source_modality == "chat":
         return _chat_claim_text(span)
+    if span.source_modality == "audio":
+        return _audio_claim_text(span)
     if span.source_modality == "pdf":
         return _pdf_claim_text(span)
     return f"The source states: {span.text}"
@@ -125,8 +133,8 @@ def extract_claims_from_spans(
     modality: str = "all",
     source_id: Optional[str] = None,
 ) -> ClaimExtractionResult:
-    if modality not in {"all", "chat", "pdf"}:
-        raise ValueError("baseline extractor currently supports all, chat, or pdf")
+    if modality not in {"all", "chat", "pdf", "audio"}:
+        raise ValueError("baseline extractor currently supports all, chat, pdf, or audio")
 
     paths = config.jsonl_paths()
     evidence_by_id = {
@@ -144,7 +152,7 @@ def extract_claims_from_spans(
             continue
         if source_id is not None and span.source_id != source_id:
             continue
-        if span.source_modality not in {"chat", "pdf"}:
+        if span.source_modality not in {"chat", "pdf", "audio"}:
             continue
         evidence = evidence_by_id.get(span.evidence_id)
         if evidence is None:

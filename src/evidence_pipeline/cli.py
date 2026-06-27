@@ -8,11 +8,14 @@ import typer
 from pydantic import ValidationError
 
 from evidence_pipeline.chunking.chat_chunker import chunk_chat
+from evidence_pipeline.chunking.audio_chunker import chunk_audio
 from evidence_pipeline.chunking.pdf_chunker import chunk_pdf
 from evidence_pipeline.config import PipelineConfig, load_config
 from evidence_pipeline.extraction.claim_extractor import extract_claims_from_spans
 from evidence_pipeline.ingest.chat import ingest_chat_export
 from evidence_pipeline.ingest.chat_evidence import build_chat_evidence
+from evidence_pipeline.ingest.audio import ingest_audio_transcript
+from evidence_pipeline.ingest.audio_evidence import build_audio_evidence
 from evidence_pipeline.ingest.pdf import ingest_pdf
 from evidence_pipeline.ingest.pdf_evidence import build_pdf_evidence
 from evidence_pipeline.ids import sha256_file, stable_id
@@ -20,7 +23,7 @@ from evidence_pipeline.jsonl import JSONLDecodeError, append_jsonl, find_record,
 from evidence_pipeline.normalization.claims import normalize_claims
 from evidence_pipeline.reports.summary import write_summary_report
 from evidence_pipeline.schemas import SCHEMA_REGISTRY, EvidenceRecord, SourceModality, SourceRecord
-from evidence_pipeline.spans.rule_highlighter import detect_chat_spans, detect_pdf_spans
+from evidence_pipeline.spans.rule_highlighter import detect_audio_spans, detect_chat_spans, detect_pdf_spans
 from evidence_pipeline.validation.deterministic import validate_raw_claims
 
 app = typer.Typer(help="Evidence-span claim validation pipeline.")
@@ -240,6 +243,65 @@ def detect_pdf_spans_command(
     typer.echo(f"spans_created={result.created} spans_skipped={result.skipped}")
 
 
+@app.command("ingest-audio-transcript")
+def ingest_audio_transcript_command(
+    transcript_file: Path = typer.Argument(..., help="Audio transcript JSON file."),
+    metadata: Optional[List[str]] = typer.Option(None, "--metadata", "-m", help="Metadata as KEY=VALUE."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Ingest a timestamped transcript into sources.jsonl and audio_utterances.jsonl."""
+    config = load_config(config_path)
+    _init_paths(config)
+    if not transcript_file.exists() or not transcript_file.is_file():
+        raise typer.BadParameter(f"transcript file does not exist: {transcript_file}")
+    try:
+        result = ingest_audio_transcript(transcript_file, config, metadata=_parse_metadata(metadata))
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc))
+    typer.echo(
+        f"source_id={result.source_id} source_created={result.source_created} "
+        f"utterances_created={result.utterances_created} utterances_skipped={result.utterances_skipped}"
+    )
+
+
+@app.command("build-audio-evidence")
+def build_audio_evidence_command(
+    source_id: Optional[str] = typer.Option(None, "--source-id", help="Only build evidence for this source."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Create audio utterance_span evidence records from audio_utterances.jsonl."""
+    config = load_config(config_path)
+    _init_paths(config)
+    result = build_audio_evidence(config, source_id=source_id)
+    typer.echo(f"evidence_created={result.created} evidence_skipped={result.skipped}")
+
+
+@app.command("chunk-audio")
+def chunk_audio_command(
+    source_id: Optional[str] = typer.Option(None, "--source-id", help="Only chunk this source."),
+    previous_utterances: int = typer.Option(1, "--previous-utterances", min=0, help="Previous utterances to include as context."),
+    max_tokens: int = typer.Option(1200, "--max-tokens", min=1, help="Policy metadata token budget."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Build speaker/time-aware audio chunks."""
+    config = load_config(config_path)
+    _init_paths(config)
+    result = chunk_audio(config, source_id=source_id, previous_utterances=previous_utterances, max_tokens=max_tokens)
+    typer.echo(f"chunks_created={result.created} chunks_skipped={result.skipped}")
+
+
+@app.command("detect-audio-spans")
+def detect_audio_spans_command(
+    source_id: Optional[str] = typer.Option(None, "--source-id", help="Only detect spans for this source."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Detect claim-bearing spans in primary audio evidence."""
+    config = load_config(config_path)
+    _init_paths(config)
+    result = detect_audio_spans(config, source_id=source_id)
+    typer.echo(f"spans_created={result.created} spans_skipped={result.skipped}")
+
+
 @app.command("validate-claims")
 def validate_claims_command(
     source_id: Optional[str] = typer.Option(None, "--source-id", help="Only validate claims for this source."),
@@ -258,7 +320,7 @@ def validate_claims_command(
 
 @app.command("extract-claims")
 def extract_claims_command(
-    modality: str = typer.Option("all", "--modality", help="Modality to extract: all, chat, or pdf."),
+    modality: str = typer.Option("all", "--modality", help="Modality to extract: all, chat, pdf, or audio."),
     source_id: Optional[str] = typer.Option(None, "--source-id", help="Only extract claims for this source."),
     config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
 ) -> None:
@@ -335,6 +397,7 @@ def validate_artifacts(
         "sources": "source",
         "chat_messages": "chat_message",
         "pdf_blocks": "pdf_block",
+        "audio_utterances": "audio_utterance",
         "evidence": "evidence",
         "chunks": "chunk",
         "spans": "span",

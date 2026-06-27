@@ -46,6 +46,20 @@ PYTHONPATH=src python3 -m evidence_pipeline report
 PYTHONPATH=src python3 -m evidence_pipeline validate-artifacts
 ```
 
+Audio transcript pipeline:
+
+```bash
+PYTHONPATH=src python3 -m evidence_pipeline ingest-audio-transcript data/raw/audio/transcript.json
+PYTHONPATH=src python3 -m evidence_pipeline build-audio-evidence
+PYTHONPATH=src python3 -m evidence_pipeline chunk-audio
+PYTHONPATH=src python3 -m evidence_pipeline detect-audio-spans
+PYTHONPATH=src python3 -m evidence_pipeline extract-claims --modality audio
+PYTHONPATH=src python3 -m evidence_pipeline validate-claims
+PYTHONPATH=src python3 -m evidence_pipeline normalize-claims
+PYTHONPATH=src python3 -m evidence_pipeline report
+PYTHONPATH=src python3 -m evidence_pipeline validate-artifacts
+```
+
 During local development:
 
 ```bash

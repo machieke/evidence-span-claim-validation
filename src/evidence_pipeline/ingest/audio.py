@@ -1,0 +1,143 @@
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+from evidence_pipeline.config import PipelineConfig
+from evidence_pipeline.ids import sha256_file, stable_id
+from evidence_pipeline.jsonl import append_jsonl, existing_values
+from evidence_pipeline.schemas.audio import AudioUtteranceRecord
+from evidence_pipeline.schemas.sources import SourceRecord
+
+
+@dataclass
+class AudioTranscriptIngestResult:
+    source_id: str
+    source_created: bool
+    utterances_created: int
+    utterances_skipped: int
+
+
+def _load_transcript(path: Path) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    with path.open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    defaults: Dict[str, Any] = {}
+    if isinstance(payload, list):
+        utterances = payload
+    elif isinstance(payload, dict) and isinstance(payload.get("utterances"), list):
+        utterances = payload["utterances"]
+        defaults = {key: value for key, value in payload.items() if key != "utterances"}
+    else:
+        raise ValueError("audio transcript must be a JSON list or an object with an utterances list")
+    for utterance in utterances:
+        if not isinstance(utterance, dict):
+            raise ValueError("every utterance must be a JSON object")
+    return utterances, defaults
+
+
+def _first_present(record: Dict[str, Any], keys: Iterable[str], default: Any = None) -> Any:
+    for key in keys:
+        if key in record and record[key] is not None:
+            return record[key]
+    return default
+
+
+def _coerce_list(value: Any) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    return [str(value)]
+
+
+def _risk_flags(record: Dict[str, Any]) -> List[str]:
+    flags = _coerce_list(record.get("risk_flags"))
+    asr_confidence = record.get("asr_confidence")
+    diarization_confidence = record.get("diarization_confidence")
+    if asr_confidence is not None and float(asr_confidence) < 0.55 and "low_asr_confidence" not in flags:
+        flags.append("low_asr_confidence")
+    if diarization_confidence is not None and float(diarization_confidence) < 0.50 and "speaker_uncertain" not in flags:
+        flags.append("speaker_uncertain")
+    return flags
+
+
+def _utterance_id(source_id: str, index: int, utterance: Dict[str, Any]) -> str:
+    raw_id = _first_present(utterance, ["utterance_id", "id"])
+    if raw_id is not None and str(raw_id).strip():
+        return str(raw_id)
+    return stable_id(
+        "utt",
+        {
+            "source_id": source_id,
+            "index": index,
+            "speaker": _first_present(utterance, ["speaker", "speaker_label"], "SPEAKER_UNKNOWN"),
+            "start": _first_present(utterance, ["start", "start_seconds"], 0),
+            "end": _first_present(utterance, ["end", "end_seconds"], 0),
+            "text": _first_present(utterance, ["text", "transcript"], ""),
+        },
+    )
+
+
+def _build_utterance(source_id: str, index: int, utterance: Dict[str, Any], defaults: Dict[str, Any]) -> AudioUtteranceRecord:
+    return AudioUtteranceRecord(
+        utterance_id=_utterance_id(source_id, index, utterance),
+        source_id=source_id,
+        speaker=str(_first_present(utterance, ["speaker", "speaker_label"], "SPEAKER_UNKNOWN")),
+        start=float(_first_present(utterance, ["start", "start_seconds"], 0)),
+        end=float(_first_present(utterance, ["end", "end_seconds"], 0)),
+        text=str(_first_present(utterance, ["text", "transcript"], "")),
+        asr_segment_ids=_coerce_list(utterance.get("asr_segment_ids")),
+        turn_ids=_coerce_list(utterance.get("turn_ids")),
+        asr_confidence=utterance.get("asr_confidence"),
+        diarization_confidence=utterance.get("diarization_confidence"),
+        language=_first_present(utterance, ["language"], defaults.get("language")),
+        metadata=utterance.get("metadata") if isinstance(utterance.get("metadata"), dict) else {},
+        risk_flags=_risk_flags(utterance),
+    )
+
+
+def ingest_audio_transcript(path: Path, config: PipelineConfig, metadata: Optional[Dict[str, Any]] = None) -> AudioTranscriptIngestResult:
+    utterances, defaults = _load_transcript(path)
+    metadata = dict(metadata or {})
+    if isinstance(defaults.get("metadata"), dict):
+        merged = dict(defaults["metadata"])
+        merged.update(metadata)
+        metadata = merged
+
+    sha256 = sha256_file(path)
+    source_id = stable_id("src", {"modality": "audio", "sha256": sha256})
+    paths = config.jsonl_paths()
+    existing_sources = existing_values(paths["sources"], "source_id")
+    source_created = source_id not in existing_sources
+    if source_created:
+        append_jsonl(
+            paths["sources"],
+            SourceRecord(
+                source_id=source_id,
+                source_modality="audio",
+                source_file=str(defaults.get("source_file") or path),
+                sha256=sha256,
+                metadata={**metadata, "utterance_count": len(utterances), "transcript_file": str(path)},
+            ),
+        )
+
+    existing_utterance_ids = existing_values(paths["audio_utterances"], "utterance_id")
+    created = 0
+    skipped = 0
+    for index, utterance in enumerate(utterances):
+        record = _build_utterance(source_id, index, utterance, defaults)
+        if record.utterance_id in existing_utterance_ids:
+            skipped += 1
+            continue
+        append_jsonl(paths["audio_utterances"], record)
+        existing_utterance_ids.add(record.utterance_id)
+        created += 1
+
+    return AudioTranscriptIngestResult(
+        source_id=source_id,
+        source_created=source_created,
+        utterances_created=created,
+        utterances_skipped=skipped,
+    )

@@ -92,6 +92,7 @@ def render_summary_markdown(config: PipelineConfig) -> Tuple[str, Dict[str, int]
         "sources": _rows(paths["sources"]),
         "chat_messages": _rows(paths["chat_messages"]),
         "pdf_blocks": _rows(paths["pdf_blocks"]),
+        "audio_utterances": _rows(paths["audio_utterances"]),
         "evidence": _rows(paths["evidence"]),
         "chunks": _rows(paths["chunks"]),
         "spans": _rows(paths["spans"]),

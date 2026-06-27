@@ -194,3 +194,63 @@ def detect_pdf_spans(config: PipelineConfig, source_id: Optional[str] = None) ->
                 existing_span_ids.add(span_id)
                 created += 1
     return SpanDetectionResult(created=created, skipped=skipped)
+
+
+def detect_audio_spans(config: PipelineConfig, source_id: Optional[str] = None) -> SpanDetectionResult:
+    paths = config.jsonl_paths()
+    evidence_by_id = {
+        evidence.evidence_id: evidence
+        for _, evidence in read_jsonl_records(paths["evidence"], EvidenceRecord)
+        if evidence.source_modality == "audio"
+    }
+    existing_span_ids = existing_values(paths["spans"], "span_id")
+    created = 0
+    skipped = 0
+
+    for _, chunk in read_jsonl_records(paths["chunks"], ChunkRecord):
+        if chunk.source_modality != "audio":
+            continue
+        if source_id is not None and chunk.source_id != source_id:
+            continue
+        for evidence_id in chunk.primary_evidence_ids:
+            evidence = evidence_by_id.get(evidence_id)
+            if evidence is None or evidence.text is None:
+                continue
+            for segment in split_sentences(evidence.text):
+                score = score_claim_bearing_segment(segment.text)
+                if score is None:
+                    continue
+                span_id = stable_id(
+                    "span_audio",
+                    {
+                        "chunk_id": chunk.chunk_id,
+                        "evidence_id": evidence.evidence_id,
+                        "char_start": segment.char_start,
+                        "char_end": segment.char_end,
+                        "detector": "audio_rules_v1",
+                    },
+                )
+                if span_id in existing_span_ids:
+                    skipped += 1
+                    continue
+                append_jsonl(
+                    paths["spans"],
+                    SpanRecord(
+                        span_id=span_id,
+                        chunk_id=chunk.chunk_id,
+                        source_id=evidence.source_id,
+                        source_modality="audio",
+                        evidence_id=evidence.evidence_id,
+                        text=segment.text,
+                        char_start=segment.char_start,
+                        char_end=segment.char_end,
+                        context_text=chunk.text,
+                        label="claim_bearing",
+                        score=score,
+                        detector={"name": "audio_rules_v1", "version": "0.1.0"},
+                        risk_flags=risk_flags_for_text_segment(segment.text, evidence.provenance, evidence.risk_flags),
+                    ),
+                )
+                existing_span_ids.add(span_id)
+                created += 1
+    return SpanDetectionResult(created=created, skipped=skipped)
