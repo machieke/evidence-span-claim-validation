@@ -22,6 +22,7 @@ REPORT_JSONL_FILES = {
     "claim_repairs": "claim_repairs.jsonl",
     "model_routing": "model_routing.jsonl",
     "pii_findings": "pii_findings.jsonl",
+    "pii_redactions": "pii_redactions.jsonl",
     "privacy_policy_violations": "privacy_policy_violations.jsonl",
     "retention_plan": "retention_plan.jsonl",
 }
@@ -177,6 +178,13 @@ def render_summary_markdown(config: PipelineConfig) -> Tuple[str, Dict[str, int]
     lines.extend(_counter_table("Audit Events", "Action", _count_by(artifacts["audit_events"], "action")))
     lines.extend(_counter_table("Quarantine Reasons", "Reason", _count_quarantine_reasons(artifacts["quarantine"])))
     lines.extend(_counter_table("PII Findings By Type", "PII Type", _count_by(artifacts["pii_findings"], "pii_type")))
+    lines.extend(
+        _counter_table(
+            "PII Redactions By Artifact",
+            "Artifact",
+            _count_by(artifacts["pii_redactions"], "artifact"),
+        )
+    )
     lines.extend(
         _counter_table(
             "Privacy Policy Violations",

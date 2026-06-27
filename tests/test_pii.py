@@ -102,6 +102,8 @@ def test_redact_pii_writes_redacted_copy_without_mutating_source(tmp_path: Path)
         assert second.exit_code == 0, second.stdout
         assert "records=1" in first.stdout
         assert "replacements=2" in first.stdout
+        assert "redactions=1" in first.stdout
+        assert "manifest=data/reports/pii_redactions.jsonl" in first.stdout
 
         output_path = Path("data/reports/chat_messages.redacted.jsonl")
         output_text = output_path.read_text(encoding="utf-8")
@@ -110,6 +112,45 @@ def test_redact_pii_writes_redacted_copy_without_mutating_source(tmp_path: Path)
         assert redacted_records[0]["text"] == "Email [EMAIL] or call [PHONE]."
         assert "alice@example.com" not in output_text
         assert "415-555-1212" not in output_text
+
+        manifest_path = Path("data/reports/pii_redactions.jsonl")
+        manifest_text = manifest_path.read_text(encoding="utf-8")
+        redactions = [payload for _, payload in read_jsonl(manifest_path)]
+        assert len(redactions) == 1
+        assert redactions[0]["artifact"] == "chat_messages"
+        assert redactions[0]["record_id"] == "msg_1"
+        assert redactions[0]["fields"] == ["text"]
+        assert redactions[0]["replacement_count"] == 2
+        assert redactions[0]["output_path"] == "data/reports/chat_messages.redacted.jsonl"
+        assert "alice@example.com" not in manifest_text
+        assert "415-555-1212" not in manifest_text
+
+        report = runner.invoke(app, ["report"])
+        assert report.exit_code == 0, report.stdout
+        report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
+        assert "| pii_redactions | 1 |" in report_text
+        assert "## PII Redactions By Artifact" in report_text
+        assert "| chat_messages | 1 |" in report_text
+
+        export = runner.invoke(app, ["export-sqlite"])
+        assert export.exit_code == 0, export.stdout
+        with sqlite3.connect(Path("data/reports/pipeline.sqlite")) as connection:
+            redaction_count = connection.execute("SELECT COUNT(*) FROM pii_redactions").fetchone()[0]
+            artifact_count = connection.execute(
+                "SELECT record_count FROM artifact_counts WHERE artifact_name = ?",
+                ("pii_redactions",),
+            ).fetchone()[0]
+            payload_json = connection.execute(
+                "SELECT payload_json FROM pii_redactions WHERE record_key = ?",
+                (redactions[0]["redaction_id"],),
+            ).fetchone()[0]
+
+        exported_payload = json.loads(payload_json)
+        assert redaction_count == 1
+        assert artifact_count == 1
+        assert exported_payload["replacement_count"] == 2
+        assert "alice@example.com" not in payload_json
+        assert "415-555-1212" not in payload_json
 
         source_text = source_path.read_text(encoding="utf-8")
         assert "alice@example.com" in source_text

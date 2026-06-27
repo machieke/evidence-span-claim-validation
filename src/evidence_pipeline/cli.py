@@ -1080,7 +1080,11 @@ def redact_pii_command(
         result = redact_pii(config, artifact=artifact, output_path=output)
     except ValueError as exc:
         raise typer.BadParameter(str(exc))
-    typer.echo(f"{result.output_path} records={result.records_written} replacements={result.replacement_count}")
+    typer.echo(
+        f"{result.output_path} records={result.records_written} "
+        f"replacements={result.replacement_count} redactions={result.redaction_count} "
+        f"manifest={result.manifest_path}"
+    )
 
 
 @app.command("check-privacy")

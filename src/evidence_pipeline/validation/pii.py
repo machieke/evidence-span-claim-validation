@@ -50,8 +50,10 @@ class PIIDetectionResult:
 @dataclass
 class PIIRedactionResult:
     output_path: Path
+    manifest_path: Path
     records_written: int
     replacement_count: int
+    redaction_count: int
 
 
 def _match_hash(value: str) -> str:
@@ -143,16 +145,51 @@ def _redact_text(text: str) -> tuple[str, int]:
     return redacted, replacement_count
 
 
-def _redact_record(artifact_name: str, payload: dict) -> tuple[dict, int]:
+def _redact_record(artifact_name: str, payload: dict) -> tuple[dict, int, List[str]]:
     redacted_payload = dict(payload)
     replacement_count = 0
+    redacted_fields = []
     for field_name in ARTIFACT_TEXT_FIELDS[artifact_name]:
         value = redacted_payload.get(field_name)
         if not isinstance(value, str) or not value:
             continue
         redacted_payload[field_name], replacements = _redact_text(value)
         replacement_count += replacements
-    return redacted_payload, replacement_count
+        if replacements:
+            redacted_fields.append(field_name)
+    return redacted_payload, replacement_count, redacted_fields
+
+
+def _redaction_record(
+    artifact_name: str,
+    line_number: int,
+    payload: dict,
+    redacted_fields: List[str],
+    replacement_count: int,
+    output_path: Path,
+) -> dict:
+    record_id_field = ARTIFACT_RECORD_ID_FIELDS[artifact_name]
+    record_id = str(payload.get(record_id_field) or f"{artifact_name}:{line_number}")
+    return {
+        "redaction_id": stable_id(
+            "redact",
+            {
+                "artifact": artifact_name,
+                "record_id": record_id,
+                "fields": redacted_fields,
+                "output_path": str(output_path),
+            },
+        ),
+        "artifact": artifact_name,
+        "record_id": record_id,
+        "source_id": payload.get("source_id"),
+        "evidence_id": payload.get("evidence_id"),
+        "claim_id": payload.get("claim_id"),
+        "fields": redacted_fields,
+        "replacement_count": replacement_count,
+        "output_path": str(output_path),
+        "schema_version": "pii.redaction.v1",
+    }
 
 
 def detect_pii(
@@ -178,21 +215,39 @@ def redact_pii(
     config: PipelineConfig,
     artifact: str,
     output_path: Optional[Path] = None,
+    manifest_path: Optional[Path] = None,
 ) -> PIIRedactionResult:
     artifact_name = _artifact_names(artifact, operation="PII redaction", allow_all=False)[0]
     if output_path is None:
         output_path = config.paths.reports_dir / f"{artifact_name}.redacted.jsonl"
+    if manifest_path is None:
+        manifest_path = config.paths.reports_dir / "pii_redactions.jsonl"
 
     records = []
+    redactions = []
     replacement_count = 0
-    for _, payload in read_jsonl(config.jsonl_paths()[artifact_name]):
-        redacted_payload, replacements = _redact_record(artifact_name, payload)
+    for line_number, payload in read_jsonl(config.jsonl_paths()[artifact_name]):
+        redacted_payload, replacements, redacted_fields = _redact_record(artifact_name, payload)
         records.append(redacted_payload)
         replacement_count += replacements
+        if replacements:
+            redactions.append(
+                _redaction_record(
+                    artifact_name,
+                    line_number,
+                    payload,
+                    redacted_fields,
+                    replacements,
+                    output_path,
+                )
+            )
 
     write_jsonl(output_path, records)
+    write_jsonl(manifest_path, redactions)
     return PIIRedactionResult(
         output_path=output_path,
+        manifest_path=manifest_path,
         records_written=len(records),
         replacement_count=replacement_count,
+        redaction_count=len(redactions),
     )
