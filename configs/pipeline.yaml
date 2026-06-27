@@ -21,5 +21,6 @@ jsonl:
   validations: validations.jsonl
   claims_validated: claims.validated.jsonl
   claims_normalized: claims.normalized.jsonl
+  review_decisions: review_decisions.jsonl
   errors: errors.jsonl
   quarantine: quarantine.jsonl

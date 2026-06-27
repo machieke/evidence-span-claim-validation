@@ -11,6 +11,7 @@ from evidence_pipeline.schemas.image import (
     ImageRegionRecord,
 )
 from evidence_pipeline.schemas.pdf import PDFBlockRecord
+from evidence_pipeline.schemas.review import ReviewDecisionRecord
 from evidence_pipeline.schemas.sources import SourceRecord
 from evidence_pipeline.schemas.spans import SpanRecord
 from evidence_pipeline.schemas.validation import ErrorRecord, QuarantineRecord, ValidationRecord
@@ -52,6 +53,9 @@ SCHEMA_REGISTRY = {
     "claim.normalized": NormalizedClaimRecord,
     "normalized-claim": NormalizedClaimRecord,
     "claims.normalized": NormalizedClaimRecord,
+    "review_decision": ReviewDecisionRecord,
+    "review-decision": ReviewDecisionRecord,
+    "review_decisions": ReviewDecisionRecord,
     "validation": ValidationRecord,
     "validations": ValidationRecord,
     "quarantine": QuarantineRecord,
@@ -73,6 +77,7 @@ __all__ = [
     "PDFBlockRecord",
     "QuarantineRecord",
     "RawClaimRecord",
+    "ReviewDecisionRecord",
     "SCHEMA_REGISTRY",
     "SourceModality",
     "SourceRecord",

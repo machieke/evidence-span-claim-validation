@@ -1,0 +1,99 @@
+import json
+from pathlib import Path
+
+from typer.testing import CliRunner
+
+from evidence_pipeline.cli import app
+from evidence_pipeline.jsonl import append_jsonl, read_jsonl
+from evidence_pipeline.schemas.claims import RawClaimRecord
+from evidence_pipeline.schemas.evidence import EvidenceRecord
+
+
+runner = CliRunner()
+
+
+def test_review_claim_records_idempotent_decision_and_trace(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        init = runner.invoke(app, ["init"])
+        assert init.exit_code == 0
+
+        evidence = EvidenceRecord(
+            evidence_id="ev_img_1",
+            source_id="src_img_1",
+            source_modality="image",
+            evidence_type="visual_region",
+            text=None,
+            provenance={"region_id": "region_1", "bbox": [0, 0, 16, 16]},
+        )
+        claim = RawClaimRecord(
+            claim_id="claim_img_label_1",
+            source_id="src_img_1",
+            source_modality="image",
+            evidence_id="ev_img_1",
+            claim_type="named_visual_classification",
+            source_faithful_claim="Model classifier_v1 classified region region_1 as red.",
+            subject="region_1",
+            predicate="classified_as",
+            object="red",
+            modality="model_observation",
+            attribution={"type": "model", "agent": "classifier_v1"},
+            truth_status="model_observation_unverified",
+            confidence=0.9,
+        )
+        append_jsonl(Path("data/jsonl/evidence.jsonl"), evidence)
+        append_jsonl(Path("data/jsonl/claims.raw.jsonl"), claim)
+
+        first = runner.invoke(
+            app,
+            [
+                "review-claim",
+                "claim_img_label_1",
+                "--decision",
+                "accept",
+                "--reviewer-id",
+                "reviewer_1",
+                "--reason-code",
+                "human_confirmed_label",
+            ],
+        )
+        second = runner.invoke(
+            app,
+            [
+                "review-claim",
+                "claim_img_label_1",
+                "--decision",
+                "accept",
+                "--reviewer-id",
+                "reviewer_1",
+                "--reason-code",
+                "human_confirmed_label",
+            ],
+        )
+        assert first.exit_code == 0, first.stdout
+        assert second.exit_code == 0, second.stdout
+        assert "created=True" in first.stdout
+        assert "created=False" in second.stdout
+
+        reviews = [payload for _, payload in read_jsonl(Path("data/jsonl/review_decisions.jsonl"))]
+        assert len(reviews) == 1
+        assert reviews[0]["claim_id"] == "claim_img_label_1"
+        assert reviews[0]["decision"] == "accept"
+        assert reviews[0]["reason_codes"] == ["human_confirmed_label"]
+
+        trace = runner.invoke(app, ["trace-claim", "claim_img_label_1"])
+        assert trace.exit_code == 0, trace.stdout
+        trace_payload = json.loads(trace.stdout)
+        assert trace_payload["review_decisions"][0]["review_id"] == reviews[0]["review_id"]
+
+        report = runner.invoke(app, ["report"])
+        assert report.exit_code == 0, report.stdout
+        report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
+        assert "| review_decisions | 1 |" in report_text
+        assert "| accept | 1 |" in report_text
+
+        artifact_check = runner.invoke(app, ["validate-artifacts"])
+        assert artifact_check.exit_code == 0, artifact_check.stdout
+
+        invalid = runner.invoke(app, ["review-claim", "claim_img_label_1", "--decision", "maybe"])
+        assert invalid.exit_code != 0
+        assert "review decision must be one of" in invalid.stdout

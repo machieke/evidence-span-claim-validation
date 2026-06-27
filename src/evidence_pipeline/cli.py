@@ -38,6 +38,7 @@ from evidence_pipeline.spans.image_region_selector import propose_image_regions
 from evidence_pipeline.spans.rule_highlighter import detect_audio_spans, detect_chat_spans, detect_pdf_spans
 from evidence_pipeline.validation.deterministic import validate_raw_claims
 from evidence_pipeline.validation.repair import suggest_evidence_repairs
+from evidence_pipeline.validation.review import record_claim_review
 
 app = typer.Typer(help="Evidence-span claim validation pipeline.")
 
@@ -808,6 +809,32 @@ def trace_claim_command(
     typer.echo(json.dumps(trace_claim(config, claim_id), indent=2, sort_keys=True))
 
 
+@app.command("review-claim")
+def review_claim_command(
+    claim_id: str = typer.Argument(..., help="Claim ID to review."),
+    decision: str = typer.Option(..., "--decision", help="Review decision: accept, reject, or needs_review."),
+    reviewer_id: str = typer.Option("human_reviewer", "--reviewer-id", help="Reviewer identifier."),
+    reason_code: Optional[List[str]] = typer.Option(None, "--reason-code", help="Reason code. Repeatable."),
+    notes: Optional[str] = typer.Option(None, "--notes", help="Optional reviewer notes."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Record a human review decision for a claim."""
+    config = load_config(config_path)
+    _init_paths(config)
+    try:
+        result = record_claim_review(
+            config,
+            claim_id=claim_id,
+            decision=decision,
+            reviewer_id=reviewer_id,
+            reason_codes=reason_code,
+            notes=notes,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc))
+    typer.echo(f"review_id={result.review_id} created={result.created}")
+
+
 @app.command("dedupe-claims")
 def dedupe_claims_command(
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="Duplicate group JSONL output path."),
@@ -883,6 +910,7 @@ def validate_artifacts(
         "validations": "validation",
         "claims_validated": "claim.validated",
         "claims_normalized": "claim.normalized",
+        "review_decisions": "review_decision",
         "errors": "error",
         "quarantine": "quarantine",
     }
