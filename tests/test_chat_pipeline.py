@@ -83,6 +83,10 @@ def test_chat_pipeline_is_idempotent(tmp_path: Path):
         assert len(list(read_jsonl(Path("data/jsonl/claims.validated.jsonl")))) == 3
         assert len(list(read_jsonl(Path("data/jsonl/claims.normalized.jsonl")))) == 3
 
+        routing = runner.invoke(app, ["route-models"])
+        assert routing.exit_code == 0, routing.stdout
+        assert "recommendations=6" in routing.stdout
+
         trace = runner.invoke(app, ["trace-claim", raw_claims[0]["claim_id"]])
         assert trace.exit_code == 0, trace.stdout
         trace_payload = json.loads(trace.stdout)
@@ -94,6 +98,14 @@ def test_chat_pipeline_is_idempotent(tmp_path: Path):
             "extract_claims",
             "validate_claims",
             "normalize_claims",
+        ]
+        assert [route["record_type"] for route in trace_payload["model_routing"]] == [
+            "span",
+            "claim_raw",
+        ]
+        assert [route["stage"] for route in trace_payload["model_routing"]] == [
+            "extract_claims",
+            "validate_claims",
         ]
 
         graph = runner.invoke(app, ["export-graph"])

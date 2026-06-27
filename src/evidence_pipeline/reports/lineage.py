@@ -29,6 +29,29 @@ def _all_by(rows: List[dict], key: str, value: Any) -> List[dict]:
     return [row for row in rows if row.get(key) == value]
 
 
+def _routing_for_claim(rows: List[dict], anchor: Optional[dict], claim_id: str) -> List[dict]:
+    if anchor is None:
+        return []
+    record_ids = {claim_id}
+    span_id = anchor.get("span_id")
+    if span_id:
+        record_ids.add(span_id)
+    matched = []
+    seen = set()
+    for row in rows:
+        dedupe_key = row.get("routing_id") or (
+            row.get("stage"),
+            row.get("record_type"),
+            row.get("record_id"),
+            row.get("selected_model"),
+        )
+        if row.get("record_id") not in record_ids or dedupe_key in seen:
+            continue
+        matched.append(row)
+        seen.add(dedupe_key)
+    return matched
+
+
 def _jobs_for_claim(jobs: List[dict], anchor: Optional[dict], claim_id: str) -> List[dict]:
     if anchor is None:
         return []
@@ -70,6 +93,7 @@ def trace_claim(config: PipelineConfig, claim_id: str) -> Dict[str, Any]:
     chunk_rows = _rows(paths["chunks"])
     source_rows = _rows(paths["sources"])
     graph_edges = _optional_rows(config.paths.reports_dir / "claim_graph.jsonl")
+    model_routing = _optional_rows(config.paths.reports_dir / "model_routing.jsonl")
 
     raw_claim = _first_by(raw_claims, "claim_id", claim_id)
     validated_claim = _first_by(validated_claims, "claim_id", claim_id)
@@ -82,6 +106,7 @@ def trace_claim(config: PipelineConfig, claim_id: str) -> Dict[str, Any]:
 
     anchor = raw_claim or validated_claim or (normalized[0] if normalized else None)
     claim_jobs = _jobs_for_claim(jobs, anchor, claim_id)
+    claim_model_routing = _routing_for_claim(model_routing, anchor, claim_id)
     evidence = None
     span = None
     chunk = None
@@ -105,6 +130,7 @@ def trace_claim(config: PipelineConfig, claim_id: str) -> Dict[str, Any]:
         "raw_claim": raw_claim,
         "validations": claim_validations,
         "jobs": claim_jobs,
+        "model_routing": claim_model_routing,
         "review_decisions": claim_reviews,
         "audit_events": claim_audit_events,
         "validated_claim": validated_claim,
