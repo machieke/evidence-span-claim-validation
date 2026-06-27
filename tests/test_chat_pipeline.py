@@ -104,6 +104,10 @@ def test_chat_pipeline_is_idempotent(tmp_path: Path):
         assert {edge["predicate"] for edge in edges} >= {"asserts", "asks_whether"}
         assert all(edge["truth_status"] == "speaker_asserted_unverified" for edge in edges)
         assert all(edge["attribution"]["type"] == "speaker" for edge in edges)
+        graph_trace = runner.invoke(app, ["trace-claim", raw_claims[0]["claim_id"]])
+        assert graph_trace.exit_code == 0, graph_trace.stdout
+        graph_trace_payload = json.loads(graph_trace.stdout)
+        assert [edge["claim_id"] for edge in graph_trace_payload["graph_edges"]] == [raw_claims[0]["claim_id"]]
 
         validated_claims = [payload for _, payload in read_jsonl(Path("data/jsonl/claims.validated.jsonl"))]
         gold_claims = [

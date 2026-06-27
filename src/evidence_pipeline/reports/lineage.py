@@ -12,6 +12,12 @@ def _rows(path: Path) -> List[dict]:
     return [payload for _, payload in read_jsonl(path)]
 
 
+def _optional_rows(path: Path) -> List[dict]:
+    if not path.exists():
+        return []
+    return _rows(path)
+
+
 def _first_by(rows: List[dict], key: str, value: Any) -> Optional[dict]:
     for row in rows:
         if row.get(key) == value:
@@ -63,6 +69,7 @@ def trace_claim(config: PipelineConfig, claim_id: str) -> Dict[str, Any]:
     span_rows = _rows(paths["spans"])
     chunk_rows = _rows(paths["chunks"])
     source_rows = _rows(paths["sources"])
+    graph_edges = _optional_rows(config.paths.reports_dir / "claim_graph.jsonl")
 
     raw_claim = _first_by(raw_claims, "claim_id", claim_id)
     validated_claim = _first_by(validated_claims, "claim_id", claim_id)
@@ -71,6 +78,7 @@ def trace_claim(config: PipelineConfig, claim_id: str) -> Dict[str, Any]:
     claim_reviews = _all_by(review_decisions, "claim_id", claim_id)
     claim_audit_events = _all_by(audit_events, "claim_id", claim_id)
     quarantined = _all_by(quarantine, "claim_id", claim_id)
+    claim_graph_edges = _all_by(graph_edges, "claim_id", claim_id)
 
     anchor = raw_claim or validated_claim or (normalized[0] if normalized else None)
     claim_jobs = _jobs_for_claim(jobs, anchor, claim_id)
@@ -101,6 +109,7 @@ def trace_claim(config: PipelineConfig, claim_id: str) -> Dict[str, Any]:
         "audit_events": claim_audit_events,
         "validated_claim": validated_claim,
         "normalized_claims": normalized,
+        "graph_edges": claim_graph_edges,
         "quarantine": quarantined,
     }
 
