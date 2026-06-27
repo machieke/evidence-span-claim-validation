@@ -16,7 +16,9 @@ class JobRecord(StrictModel):
     source_id: Optional[str] = None
     input_record_ids: List[str] = Field(default_factory=list)
     config_hash: str
+    model_id: Optional[str] = None
     model_hash: Optional[str] = None
+    prompt_id: Optional[str] = None
     prompt_hash: Optional[str] = None
     status: JobStatus
     attempts: int = 1

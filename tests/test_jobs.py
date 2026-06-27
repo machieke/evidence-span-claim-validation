@@ -2,8 +2,10 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+from evidence_pipeline.config import PipelineConfig
 from evidence_pipeline.jsonl import append_jsonl, read_jsonl
 from evidence_pipeline.cli import app
+from evidence_pipeline.jobs import record_job_result
 from evidence_pipeline.schemas.evidence import EvidenceRecord
 from evidence_pipeline.schemas.spans import SpanRecord
 
@@ -58,6 +60,14 @@ def test_core_stage_commands_write_idempotent_job_records(tmp_path: Path):
         assert all(job["status"] == "succeeded" for job in jobs)
         assert all(job["attempts"] == 1 for job in jobs)
         assert all(job["config_hash"].startswith("cfg_") for job in jobs)
+        assert [job["model_id"] for job in jobs] == [
+            "rules.v1",
+            "deterministic.v1",
+            "normalizer.v1",
+        ]
+        assert all(job["model_hash"].startswith("model_") for job in jobs)
+        assert all(job.get("prompt_id") is None for job in jobs)
+        assert all(job.get("prompt_hash") is None for job in jobs)
         assert jobs[0]["input_record_ids"] == ["modality:chat"]
         assert jobs[0]["metrics"] == {"claims_created": 1, "claims_skipped": 0}
         assert jobs[1]["metrics"] == {
@@ -77,3 +87,37 @@ def test_core_stage_commands_write_idempotent_job_records(tmp_path: Path):
 
         artifact_check = runner.invoke(app, ["validate-artifacts"])
         assert artifact_check.exit_code == 0, artifact_check.stdout
+
+
+def test_record_job_result_persists_auditable_model_and_prompt_ids(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        config = PipelineConfig()
+
+        first = record_job_result(
+            config,
+            stage="extract_claims",
+            source_id="src_1",
+            input_record_ids=["span_1"],
+            model_id="llm.extractor.v2",
+            prompt_id="extract_claims.chat.v3",
+            metrics={"claims_created": 1},
+        )
+        second = record_job_result(
+            config,
+            stage="extract_claims",
+            source_id="src_1",
+            input_record_ids=["span_1"],
+            model_id="llm.extractor.v2",
+            prompt_id="extract_claims.chat.v3",
+            metrics={"claims_created": 1},
+        )
+
+        assert first.created is True
+        assert second.created is False
+        jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
+        assert len(jobs) == 1
+        assert jobs[0]["job_id"] == first.job_id
+        assert jobs[0]["model_id"] == "llm.extractor.v2"
+        assert jobs[0]["prompt_id"] == "extract_claims.chat.v3"
+        assert jobs[0]["model_hash"].startswith("model_")
+        assert jobs[0]["prompt_hash"].startswith("prompt_")
