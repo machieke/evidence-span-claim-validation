@@ -21,6 +21,7 @@ jsonl:
   validations: validations.jsonl
   claims_validated: claims.validated.jsonl
   claims_normalized: claims.normalized.jsonl
+  jobs: jobs.jsonl
   review_decisions: review_decisions.jsonl
   audit_events: audit_events.jsonl
   errors: errors.jsonl

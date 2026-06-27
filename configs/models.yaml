@@ -3,3 +3,16 @@ models:
   extraction_strong: strong_reasoning_model
   validation_default: cheap_validator_model
   validation_strong: strong_validator_model
+
+routing:
+  use_strong_extractor_if:
+    span_score_lt: 0.60
+    risk_flags_any:
+      - context_dependent_coreference
+  use_strong_validator_if:
+    raw_claim_confidence_lt: 0.65
+    modality:
+      - image
+    risk_flags_any:
+      - speaker_uncertain
+      - weak_cluster_margin

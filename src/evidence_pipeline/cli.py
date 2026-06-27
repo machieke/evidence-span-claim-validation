@@ -11,7 +11,12 @@ from evidence_pipeline.chunking.chat_chunker import chunk_chat
 from evidence_pipeline.chunking.audio_chunker import chunk_audio
 from evidence_pipeline.chunking.pdf_chunker import chunk_pdf
 from evidence_pipeline.config import PipelineConfig, load_config
-from evidence_pipeline.extraction.claim_extractor import extract_claims_from_spans
+from evidence_pipeline.extraction.claim_extractor import (
+    IMAGE_CLUSTER_EXTRACTOR_VERSION,
+    IMAGE_REGION_EXTRACTOR_VERSION,
+    RULE_EXTRACTOR_VERSION,
+    extract_claims_from_spans,
+)
 from evidence_pipeline.extraction.image_classifier import classify_image_regions
 from evidence_pipeline.ingest.chat import ingest_chat_export
 from evidence_pipeline.ingest.chat_evidence import build_chat_evidence
@@ -22,8 +27,10 @@ from evidence_pipeline.ingest.image_evidence import build_image_cluster_evidence
 from evidence_pipeline.ingest.pdf import ingest_pdf
 from evidence_pipeline.ingest.pdf_evidence import build_pdf_evidence
 from evidence_pipeline.ids import sha256_file, stable_id
+from evidence_pipeline.jobs import record_job_result
 from evidence_pipeline.jsonl import JSONLDecodeError, append_jsonl, find_record, read_jsonl
-from evidence_pipeline.normalization.claims import normalize_claims
+from evidence_pipeline.model_routing import write_model_routing_report
+from evidence_pipeline.normalization.claims import NORMALIZER_VERSION, normalize_claims
 from evidence_pipeline.normalization.dedupe import dedupe_normalized_claims
 from evidence_pipeline.normalization.graph_export import export_graph_jsonl
 from evidence_pipeline.normalization.metta_export import export_metta
@@ -38,7 +45,7 @@ from evidence_pipeline.spans.image_region_clusterer import (
 )
 from evidence_pipeline.spans.image_region_selector import propose_image_regions
 from evidence_pipeline.spans.rule_highlighter import detect_audio_spans, detect_chat_spans, detect_pdf_spans
-from evidence_pipeline.validation.deterministic import validate_raw_claims
+from evidence_pipeline.validation.deterministic import VALIDATOR_VERSION, validate_raw_claims
 from evidence_pipeline.validation.pii import detect_pii, redact_pii
 from evidence_pipeline.validation.privacy import check_privacy_policy
 from evidence_pipeline.validation.repair import suggest_evidence_repairs
@@ -105,6 +112,24 @@ def _ensure_modality(modality: str, allowed: set, command_name: str) -> None:
     if modality not in allowed:
         expected = ", ".join(sorted(allowed))
         raise typer.BadParameter(f"{command_name} supports: {expected}")
+
+
+def _stage_input_ids(
+    default_id: str,
+    source_id: Optional[str] = None,
+    record_ids: Optional[List[str]] = None,
+) -> List[str]:
+    if record_ids:
+        return record_ids
+    if source_id:
+        return [source_id]
+    return [default_id]
+
+
+def _extract_model_id(modality: str) -> str:
+    if modality == "image":
+        return f"{IMAGE_REGION_EXTRACTOR_VERSION}+{IMAGE_CLUSTER_EXTRACTOR_VERSION}"
+    return RULE_EXTRACTOR_VERSION
 
 
 @app.command("init")
@@ -714,6 +739,18 @@ def validate_claims_command(
     config = load_config(config_path)
     _init_paths(config)
     result = validate_raw_claims(config, source_id=source_id, claim_ids=claim_id)
+    record_job_result(
+        config,
+        stage="validate_claims",
+        source_id=source_id,
+        input_record_ids=_stage_input_ids("claims_raw", source_id=source_id, record_ids=claim_id),
+        model_id=VALIDATOR_VERSION,
+        metrics={
+            "claims_accepted": result.accepted,
+            "claims_quarantined": result.quarantined,
+            "claims_skipped": result.skipped,
+        },
+    )
     typer.echo(
         f"claims_accepted={result.accepted} claims_quarantined={result.quarantined} "
         f"claims_skipped={result.skipped}"
@@ -733,6 +770,15 @@ def extract_claims_command(
         result = extract_claims_from_spans(config, modality=modality, source_id=source_id)
     except ValueError as exc:
         raise typer.BadParameter(str(exc))
+    record_job_result(
+        config,
+        stage="extract_claims",
+        source_id=source_id,
+        input_record_ids=_stage_input_ids(f"modality:{modality}", source_id=source_id),
+        model_id=_extract_model_id(modality),
+        metrics={"claims_created": result.created, "claims_skipped": result.skipped},
+        metadata={"modality": modality},
+    )
     typer.echo(f"claims_created={result.created} claims_skipped={result.skipped}")
 
 
@@ -748,6 +794,28 @@ def report_command(
     typer.echo(str(result.output_path))
 
 
+@app.command("route-models")
+def route_models_command(
+    stage: str = typer.Option("all", "--stage", help="Routing stage: all, extraction, or validation."),
+    models_config: Path = typer.Option(Path("configs/models.yaml"), "--models-config", help="Models config path."),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Model routing JSONL output path."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Write cheap/strong model routing recommendations without invoking models."""
+    config = load_config(config_path)
+    _init_paths(config)
+    try:
+        result = write_model_routing_report(
+            config,
+            models_config_path=models_config,
+            output_path=output,
+            stage=stage,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc))
+    typer.echo(f"{result.output_path} recommendations={result.recommendation_count}")
+
+
 @app.command("normalize-claims")
 def normalize_claims_command(
     source_id: Optional[str] = typer.Option(None, "--source-id", help="Only normalize claims for this source."),
@@ -758,6 +826,14 @@ def normalize_claims_command(
     config = load_config(config_path)
     _init_paths(config)
     result = normalize_claims(config, source_id=source_id, claim_ids=claim_id)
+    record_job_result(
+        config,
+        stage="normalize_claims",
+        source_id=source_id,
+        input_record_ids=_stage_input_ids("claims_validated", source_id=source_id, record_ids=claim_id),
+        model_id=NORMALIZER_VERSION,
+        metrics={"claims_normalized": result.created, "claims_skipped": result.skipped},
+    )
     typer.echo(f"claims_normalized={result.created} claims_skipped={result.skipped}")
 
 
@@ -995,6 +1071,7 @@ def validate_artifacts(
         "validations": "validation",
         "claims_validated": "claim.validated",
         "claims_normalized": "claim.normalized",
+        "jobs": "job",
         "review_decisions": "review_decision",
         "audit_events": "audit_event",
         "errors": "error",

@@ -11,6 +11,7 @@ from evidence_pipeline.schemas.image import (
     ImageRegionEmbeddingRecord,
     ImageRegionRecord,
 )
+from evidence_pipeline.schemas.jobs import JobRecord
 from evidence_pipeline.schemas.pdf import PDFBlockRecord
 from evidence_pipeline.schemas.review import ReviewDecisionRecord
 from evidence_pipeline.schemas.sources import SourceRecord
@@ -54,6 +55,8 @@ SCHEMA_REGISTRY = {
     "claim.normalized": NormalizedClaimRecord,
     "normalized-claim": NormalizedClaimRecord,
     "claims.normalized": NormalizedClaimRecord,
+    "job": JobRecord,
+    "jobs": JobRecord,
     "review_decision": ReviewDecisionRecord,
     "review-decision": ReviewDecisionRecord,
     "review_decisions": ReviewDecisionRecord,
@@ -78,6 +81,7 @@ __all__ = [
     "ImageRecord",
     "ImageRegionEmbeddingRecord",
     "ImageRegionRecord",
+    "JobRecord",
     "NormalizedClaimRecord",
     "PDFBlockRecord",
     "QuarantineRecord",

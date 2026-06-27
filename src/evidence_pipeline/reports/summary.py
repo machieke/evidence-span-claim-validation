@@ -104,6 +104,7 @@ def render_summary_markdown(config: PipelineConfig) -> Tuple[str, Dict[str, int]
         "validations": _rows(paths["validations"]),
         "claims_validated": _rows(paths["claims_validated"]),
         "claims_normalized": _rows(paths["claims_normalized"]),
+        "jobs": _rows(paths["jobs"]),
         "review_decisions": _rows(paths["review_decisions"]),
         "audit_events": _rows(paths["audit_events"]),
         "errors": _rows(paths["errors"]),
@@ -134,6 +135,7 @@ def render_summary_markdown(config: PipelineConfig) -> Tuple[str, Dict[str, int]
     lines.extend(_counter_table("Raw Claims By Modality", "Modality", raw_claim_modalities))
     lines.extend(_counter_table("Validated Claims By Modality", "Modality", validated_claim_modalities))
     lines.extend(_counter_table("Validation Statuses", "Status", _count_validation_status(artifacts["validations"])))
+    lines.extend(_counter_table("Jobs By Stage", "Stage", _count_by(artifacts["jobs"], "stage")))
     lines.extend(_counter_table("Review Decisions", "Decision", _count_by(artifacts["review_decisions"], "decision")))
     lines.extend(_counter_table("Audit Events", "Action", _count_by(artifacts["audit_events"], "action")))
     lines.extend(_counter_table("Quarantine Reasons", "Reason", _count_quarantine_reasons(artifacts["quarantine"])))

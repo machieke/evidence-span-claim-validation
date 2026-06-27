@@ -52,6 +52,7 @@ def test_export_sqlite_writes_artifact_tables_and_counts(tmp_path: Path):
         with sqlite3.connect(database_path) as connection:
             evidence_count = connection.execute("SELECT COUNT(*) FROM evidence").fetchone()[0]
             claims_count = connection.execute("SELECT COUNT(*) FROM claims_raw").fetchone()[0]
+            jobs_count = connection.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
             review_count = connection.execute("SELECT COUNT(*) FROM review_decisions").fetchone()[0]
             audit_count = connection.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0]
             artifact_count = connection.execute(
@@ -65,6 +66,7 @@ def test_export_sqlite_writes_artifact_tables_and_counts(tmp_path: Path):
 
         assert evidence_count == 1
         assert claims_count == 1
+        assert jobs_count == 0
         assert review_count == 0
         assert audit_count == 0
         assert artifact_count == 1
