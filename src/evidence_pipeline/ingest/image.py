@@ -20,6 +20,7 @@ class ImageIngestResult:
     sources_created: int
     images_created: int
     images_skipped: int
+    source_ids: List[str]
 
 
 def iter_image_paths(path: Path) -> Iterable[Path]:
@@ -72,9 +73,11 @@ def ingest_images(path: Path, config: PipelineConfig, metadata: Optional[Dict[st
     sources_created = 0
     images_created = 0
     images_skipped = 0
+    source_ids: List[str] = []
 
     for image_path in iter_image_paths(path):
         record = _image_record(image_path, metadata)
+        source_ids.append(record.source_id)
         if record.source_id not in existing_source_ids:
             append_jsonl(
                 paths["sources"],
@@ -99,4 +102,5 @@ def ingest_images(path: Path, config: PipelineConfig, metadata: Optional[Dict[st
         sources_created=sources_created,
         images_created=images_created,
         images_skipped=images_skipped,
+        source_ids=source_ids,
     )

@@ -351,6 +351,124 @@ def build_image_evidence_command(
     typer.echo(f"evidence_created={result.created} evidence_skipped={result.skipped}")
 
 
+@app.command("run-chat")
+def run_chat_command(
+    chat_export: Path = typer.Argument(..., help="Chat export JSON file."),
+    previous_messages: int = typer.Option(2, "--previous-messages", min=0, help="Previous messages to include as context."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Run chat ingest through normalized claims, graph export, and report."""
+    config = load_config(config_path)
+    _init_paths(config)
+    if not chat_export.exists() or not chat_export.is_file():
+        raise typer.BadParameter(f"chat export does not exist: {chat_export}")
+    ingest_result = ingest_chat_export(chat_export, config)
+    evidence_result = build_chat_evidence(config, source_id=ingest_result.source_id)
+    chunk_result = chunk_chat(config, source_id=ingest_result.source_id, previous_messages=previous_messages)
+    span_result = detect_chat_spans(config, source_id=ingest_result.source_id)
+    extract_result = extract_claims_from_spans(config, modality="chat", source_id=ingest_result.source_id)
+    validation_result = validate_raw_claims(config, source_id=ingest_result.source_id)
+    normalization_result = normalize_claims(config, source_id=ingest_result.source_id)
+    graph_result = export_graph_jsonl(config)
+    report_result = write_summary_report(config)
+    typer.echo(
+        f"source_id={ingest_result.source_id} messages_created={ingest_result.messages_created} "
+        f"evidence_created={evidence_result.created} chunks_created={chunk_result.created} "
+        f"spans_created={span_result.created} claims_created={extract_result.created} "
+        f"claims_accepted={validation_result.accepted} claims_normalized={normalization_result.created} "
+        f"graph_edges={graph_result.edge_count} report={report_result.output_path}"
+    )
+
+
+@app.command("run-pdf")
+def run_pdf_command(
+    pdf_file: Path = typer.Argument(..., help="PDF file to ingest."),
+    target_tokens: int = typer.Option(1200, "--target-tokens", min=1, help="Approximate target token budget."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Run PDF ingest through normalized claims, graph export, and report."""
+    config = load_config(config_path)
+    _init_paths(config)
+    if not pdf_file.exists() or not pdf_file.is_file():
+        raise typer.BadParameter(f"PDF file does not exist: {pdf_file}")
+    try:
+        ingest_result = ingest_pdf(pdf_file, config)
+    except RuntimeError as exc:
+        raise typer.BadParameter(str(exc))
+    evidence_result = build_pdf_evidence(config, source_id=ingest_result.source_id)
+    chunk_result = chunk_pdf(config, source_id=ingest_result.source_id, target_tokens=target_tokens)
+    span_result = detect_pdf_spans(config, source_id=ingest_result.source_id)
+    extract_result = extract_claims_from_spans(config, modality="pdf", source_id=ingest_result.source_id)
+    validation_result = validate_raw_claims(config, source_id=ingest_result.source_id)
+    normalization_result = normalize_claims(config, source_id=ingest_result.source_id)
+    graph_result = export_graph_jsonl(config)
+    report_result = write_summary_report(config)
+    typer.echo(
+        f"source_id={ingest_result.source_id} blocks_created={ingest_result.blocks_created} "
+        f"evidence_created={evidence_result.created} chunks_created={chunk_result.created} "
+        f"spans_created={span_result.created} claims_created={extract_result.created} "
+        f"claims_accepted={validation_result.accepted} claims_normalized={normalization_result.created} "
+        f"graph_edges={graph_result.edge_count} report={report_result.output_path}"
+    )
+
+
+@app.command("run-audio-transcript")
+def run_audio_transcript_command(
+    transcript_file: Path = typer.Argument(..., help="Audio transcript JSON file."),
+    previous_utterances: int = typer.Option(1, "--previous-utterances", min=0, help="Previous utterances to include as context."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Run audio transcript ingest through normalized claims, graph export, and report."""
+    config = load_config(config_path)
+    _init_paths(config)
+    if not transcript_file.exists() or not transcript_file.is_file():
+        raise typer.BadParameter(f"transcript file does not exist: {transcript_file}")
+    ingest_result = ingest_audio_transcript(transcript_file, config)
+    evidence_result = build_audio_evidence(config, source_id=ingest_result.source_id)
+    chunk_result = chunk_audio(config, source_id=ingest_result.source_id, previous_utterances=previous_utterances)
+    span_result = detect_audio_spans(config, source_id=ingest_result.source_id)
+    extract_result = extract_claims_from_spans(config, modality="audio", source_id=ingest_result.source_id)
+    validation_result = validate_raw_claims(config, source_id=ingest_result.source_id)
+    normalization_result = normalize_claims(config, source_id=ingest_result.source_id)
+    graph_result = export_graph_jsonl(config)
+    report_result = write_summary_report(config)
+    typer.echo(
+        f"source_id={ingest_result.source_id} utterances_created={ingest_result.utterances_created} "
+        f"evidence_created={evidence_result.created} chunks_created={chunk_result.created} "
+        f"spans_created={span_result.created} claims_created={extract_result.created} "
+        f"claims_accepted={validation_result.accepted} claims_normalized={normalization_result.created} "
+        f"graph_edges={graph_result.edge_count} report={report_result.output_path}"
+    )
+
+
+@app.command("run-images")
+def run_images_command(
+    image_path: Path = typer.Argument(..., help="Image file or directory to ingest."),
+    patch_size: int = typer.Option(224, "--patch-size", min=1, help="Grid patch size in pixels."),
+    stride: int = typer.Option(112, "--stride", min=1, help="Grid stride in pixels."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Run image ingest through region proposal, visual evidence, and report."""
+    config = load_config(config_path)
+    _init_paths(config)
+    if not image_path.exists():
+        raise typer.BadParameter(f"image path does not exist: {image_path}")
+    ingest_result = ingest_images(image_path, config)
+    regions_created = 0
+    evidence_created = 0
+    for source_id in ingest_result.source_ids:
+        region_result = propose_image_regions(config, source_id=source_id, patch_size=patch_size, stride=stride)
+        evidence_result = build_image_evidence(config, source_id=source_id)
+        regions_created += region_result.created
+        evidence_created += evidence_result.created
+    report_result = write_summary_report(config)
+    typer.echo(
+        f"sources_created={ingest_result.sources_created} images_created={ingest_result.images_created} "
+        f"regions_created={regions_created} evidence_created={evidence_created} "
+        f"report={report_result.output_path}"
+    )
+
+
 @app.command("validate-claims")
 def validate_claims_command(
     source_id: Optional[str] = typer.Option(None, "--source-id", help="Only validate claims for this source."),

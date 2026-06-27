@@ -79,3 +79,12 @@ During local development:
 ```bash
 python3 -m pytest
 ```
+
+Convenience runners:
+
+```bash
+PYTHONPATH=src python3 -m evidence_pipeline run-chat data/raw/chat/export.json
+PYTHONPATH=src python3 -m evidence_pipeline run-pdf data/raw/pdf/report.pdf
+PYTHONPATH=src python3 -m evidence_pipeline run-audio-transcript data/raw/audio/transcript.json
+PYTHONPATH=src python3 -m evidence_pipeline run-images data/raw/images/
+```
