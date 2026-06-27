@@ -50,6 +50,9 @@ def test_detect_pii_writes_redacted_findings_without_raw_matches(tmp_path: Path)
         assert report.exit_code == 0, report.stdout
         report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
         assert "| pii_findings | 2 |" in report_text
+        assert "## PII Findings By Type" in report_text
+        assert "| email | 1 |" in report_text
+        assert "| phone | 1 |" in report_text
 
         export = runner.invoke(app, ["export-sqlite"])
         assert export.exit_code == 0, export.stdout

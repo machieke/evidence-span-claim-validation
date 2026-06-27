@@ -53,3 +53,10 @@ def test_retention_plan_reports_old_raw_sources_without_deleting(tmp_path: Path)
         assert candidates[0]["retention_days"] == 365
         assert old_file.exists()
         assert current_file.exists()
+
+        report = runner.invoke(app, ["report"])
+        assert report.exit_code == 0, report.stdout
+        report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
+        assert "| retention_plan | 1 |" in report_text
+        assert "## Retention Plan Reasons" in report_text
+        assert "| raw_source_retention_exceeded | 1 |" in report_text

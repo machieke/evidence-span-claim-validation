@@ -81,3 +81,10 @@ def test_check_privacy_flags_external_provider_for_sensitive_source(tmp_path: Pa
         assert violations[0]["reason_code"] == "non_local_provider_for_sensitive_source"
         assert violations[0]["sensitive_metadata_keys"] == ["contains_pii", "local_only"]
         assert "Call Alice at 415-555-1212." not in output_text
+
+        report = runner.invoke(app, ["report"])
+        assert report.exit_code == 0, report.stdout
+        report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
+        assert "| privacy_policy_violations | 1 |" in report_text
+        assert "## Privacy Policy Violations" in report_text
+        assert "| non_local_provider_for_sensitive_source | 1 |" in report_text
