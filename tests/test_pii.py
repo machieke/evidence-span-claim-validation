@@ -47,3 +47,44 @@ def test_detect_pii_writes_redacted_findings_without_raw_matches(tmp_path: Path)
         invalid = runner.invoke(app, ["detect-pii", "--artifact", "images"])
         assert invalid.exit_code != 0
         assert "PII detection supports artifacts" in invalid.stdout
+
+
+def test_redact_pii_writes_redacted_copy_without_mutating_source(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        init = runner.invoke(app, ["init"])
+        assert init.exit_code == 0
+
+        source_path = Path("data/jsonl/chat_messages.jsonl")
+        append_jsonl(
+            source_path,
+            ChatMessageRecord(
+                message_id="msg_1",
+                source_id="src_chat_1",
+                conversation_id="conv_1",
+                sender_id="alice",
+                text="Email alice@example.com or call 415-555-1212.",
+            ),
+        )
+
+        first = runner.invoke(app, ["redact-pii", "--artifact", "chat_messages"])
+        second = runner.invoke(app, ["redact-pii", "--artifact", "chat_messages"])
+        assert first.exit_code == 0, first.stdout
+        assert second.exit_code == 0, second.stdout
+        assert "records=1" in first.stdout
+        assert "replacements=2" in first.stdout
+
+        output_path = Path("data/reports/chat_messages.redacted.jsonl")
+        output_text = output_path.read_text(encoding="utf-8")
+        redacted_records = [payload for _, payload in read_jsonl(output_path)]
+        assert len(redacted_records) == 1
+        assert redacted_records[0]["text"] == "Email [EMAIL] or call [PHONE]."
+        assert "alice@example.com" not in output_text
+        assert "415-555-1212" not in output_text
+
+        source_text = source_path.read_text(encoding="utf-8")
+        assert "alice@example.com" in source_text
+        assert "415-555-1212" in source_text
+
+        invalid = runner.invoke(app, ["redact-pii", "--artifact", "all"])
+        assert invalid.exit_code != 0
+        assert "requires one artifact at a time" in invalid.stdout

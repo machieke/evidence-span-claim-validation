@@ -16,6 +16,12 @@ PII_PATTERNS = {
     "ssn": re.compile(r"\b\d{3}-\d{2}-\d{4}\b"),
 }
 
+PII_REDACTION_PLACEHOLDERS = {
+    "email": "[EMAIL]",
+    "phone": "[PHONE]",
+    "ssn": "[SSN]",
+}
+
 ARTIFACT_TEXT_FIELDS = {
     "chat_messages": ("text",),
     "pdf_blocks": ("text",),
@@ -41,6 +47,13 @@ class PIIDetectionResult:
     finding_count: int
 
 
+@dataclass
+class PIIRedactionResult:
+    output_path: Path
+    records_written: int
+    replacement_count: int
+
+
 def _match_hash(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
@@ -57,12 +70,16 @@ def _redacted_preview(pii_type: str, value: str) -> str:
     return "[redacted]"
 
 
-def _artifact_names(artifact: str) -> List[str]:
+def _artifact_names(artifact: str, operation: str = "PII detection", allow_all: bool = True) -> List[str]:
     if artifact == "all":
+        if not allow_all:
+            expected = ", ".join(sorted(ARTIFACT_TEXT_FIELDS))
+            raise ValueError(f"{operation} requires one artifact at a time; supported artifacts: {expected}")
         return list(ARTIFACT_TEXT_FIELDS)
     if artifact not in ARTIFACT_TEXT_FIELDS:
-        expected = ", ".join(["all"] + sorted(ARTIFACT_TEXT_FIELDS))
-        raise ValueError(f"PII detection supports artifacts: {expected}")
+        supported = ["all"] + sorted(ARTIFACT_TEXT_FIELDS) if allow_all else sorted(ARTIFACT_TEXT_FIELDS)
+        expected = ", ".join(supported)
+        raise ValueError(f"{operation} supports artifacts: {expected}")
     return [artifact]
 
 
@@ -117,6 +134,27 @@ def _scan_artifact(config: PipelineConfig, artifact_name: str) -> List[dict]:
     return findings
 
 
+def _redact_text(text: str) -> tuple[str, int]:
+    redacted = text
+    replacement_count = 0
+    for pii_type, pattern in PII_PATTERNS.items():
+        redacted, replacements = pattern.subn(PII_REDACTION_PLACEHOLDERS[pii_type], redacted)
+        replacement_count += replacements
+    return redacted, replacement_count
+
+
+def _redact_record(artifact_name: str, payload: dict) -> tuple[dict, int]:
+    redacted_payload = dict(payload)
+    replacement_count = 0
+    for field_name in ARTIFACT_TEXT_FIELDS[artifact_name]:
+        value = redacted_payload.get(field_name)
+        if not isinstance(value, str) or not value:
+            continue
+        redacted_payload[field_name], replacements = _redact_text(value)
+        replacement_count += replacements
+    return redacted_payload, replacement_count
+
+
 def detect_pii(
     config: PipelineConfig,
     artifact: str = "all",
@@ -134,3 +172,27 @@ def detect_pii(
             findings.append(finding)
     write_jsonl(output_path, findings)
     return PIIDetectionResult(output_path=output_path, finding_count=len(findings))
+
+
+def redact_pii(
+    config: PipelineConfig,
+    artifact: str,
+    output_path: Optional[Path] = None,
+) -> PIIRedactionResult:
+    artifact_name = _artifact_names(artifact, operation="PII redaction", allow_all=False)[0]
+    if output_path is None:
+        output_path = config.paths.reports_dir / f"{artifact_name}.redacted.jsonl"
+
+    records = []
+    replacement_count = 0
+    for _, payload in read_jsonl(config.jsonl_paths()[artifact_name]):
+        redacted_payload, replacements = _redact_record(artifact_name, payload)
+        records.append(redacted_payload)
+        replacement_count += replacements
+
+    write_jsonl(output_path, records)
+    return PIIRedactionResult(
+        output_path=output_path,
+        records_written=len(records),
+        replacement_count=replacement_count,
+    )

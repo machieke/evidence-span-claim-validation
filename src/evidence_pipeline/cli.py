@@ -39,7 +39,7 @@ from evidence_pipeline.spans.image_region_clusterer import (
 from evidence_pipeline.spans.image_region_selector import propose_image_regions
 from evidence_pipeline.spans.rule_highlighter import detect_audio_spans, detect_chat_spans, detect_pdf_spans
 from evidence_pipeline.validation.deterministic import validate_raw_claims
-from evidence_pipeline.validation.pii import detect_pii
+from evidence_pipeline.validation.pii import detect_pii, redact_pii
 from evidence_pipeline.validation.repair import suggest_evidence_repairs
 from evidence_pipeline.validation.review import record_claim_review
 
@@ -904,6 +904,22 @@ def detect_pii_command(
     except ValueError as exc:
         raise typer.BadParameter(str(exc))
     typer.echo(f"{result.output_path} findings={result.finding_count}")
+
+
+@app.command("redact-pii")
+def redact_pii_command(
+    artifact: str = typer.Option(..., "--artifact", help="Artifact to redact."),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Redacted JSONL output path."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Write a redacted copy of one text-like artifact without modifying canonical JSONL."""
+    config = load_config(config_path)
+    _init_paths(config)
+    try:
+        result = redact_pii(config, artifact=artifact, output_path=output)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc))
+    typer.echo(f"{result.output_path} records={result.records_written} replacements={result.replacement_count}")
 
 
 @app.command("validate-jsonl")
