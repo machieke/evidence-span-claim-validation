@@ -51,6 +51,7 @@ from evidence_pipeline.validation.pii import detect_pii, redact_pii
 from evidence_pipeline.validation.privacy import check_privacy_policy
 from evidence_pipeline.validation.repair import suggest_evidence_repairs
 from evidence_pipeline.validation.review import record_claim_review
+from evidence_pipeline.validation.schema_repair import import_raw_claim_candidates
 
 app = typer.Typer(help="Evidence-span claim validation pipeline.")
 
@@ -781,6 +782,26 @@ def extract_claims_command(
         metadata={"modality": modality},
     )
     typer.echo(f"claims_created={result.created} claims_skipped={result.skipped}")
+
+
+@app.command("import-raw-claims")
+def import_raw_claims_command(
+    input_path: Path = typer.Argument(..., help="JSON or JSONL file of raw claim candidates."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Import raw claim candidates after narrow schema repair and validation."""
+    config = load_config(config_path)
+    _init_paths(config)
+    if not input_path.exists() or not input_path.is_file():
+        raise typer.BadParameter(f"input path does not exist: {input_path}")
+    try:
+        result = import_raw_claim_candidates(config, input_path)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc))
+    typer.echo(
+        f"claims_imported={result.imported} claims_repaired={result.repaired} "
+        f"claims_quarantined={result.quarantined} claims_skipped={result.skipped}"
+    )
 
 
 @app.command("report")
