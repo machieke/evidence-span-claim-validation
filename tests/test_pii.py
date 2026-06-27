@@ -8,6 +8,7 @@ from evidence_pipeline.cli import app
 from evidence_pipeline.jsonl import append_jsonl, read_jsonl
 from evidence_pipeline.schemas.audio import AudioUtteranceRecord
 from evidence_pipeline.schemas.chat import ChatMessageRecord
+from evidence_pipeline.schemas.claims import RawClaimRecord
 
 
 runner = CliRunner()
@@ -211,3 +212,47 @@ def test_audio_transcript_pii_detection_and_redaction(tmp_path: Path):
         assert "alice@example.com" in source_text
         assert "415-555-1212" in source_text
         assert "123-45-6789" in source_text
+
+
+def test_trace_claim_includes_claim_pii_reports(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        init = runner.invoke(app, ["init"])
+        assert init.exit_code == 0
+
+        append_jsonl(
+            Path("data/jsonl/claims.raw.jsonl"),
+            RawClaimRecord(
+                claim_id="claim_pii",
+                source_id="src_chat_1",
+                source_modality="chat",
+                evidence_id="ev_claim_pii",
+                source_faithful_claim="The speaker asserted: Call Alice at 415-555-1212.",
+                modality="asserted",
+                evidence_text="Call Alice at 415-555-1212.",
+                attribution={"type": "speaker", "agent": "alice"},
+                truth_status="speaker_asserted_unverified",
+                confidence=0.9,
+            ),
+        )
+
+        detection = runner.invoke(app, ["detect-pii", "--artifact", "claims_raw"])
+        redaction = runner.invoke(app, ["redact-pii", "--artifact", "claims_raw"])
+        assert detection.exit_code == 0, detection.stdout
+        assert redaction.exit_code == 0, redaction.stdout
+
+        findings = [
+            payload
+            for _, payload in read_jsonl(Path("data/reports/pii_findings.jsonl"))
+        ]
+        redactions = [
+            payload
+            for _, payload in read_jsonl(Path("data/reports/pii_redactions.jsonl"))
+        ]
+        trace = runner.invoke(app, ["trace-claim", "claim_pii"])
+
+        assert trace.exit_code == 0, trace.stdout
+        trace_payload = json.loads(trace.stdout)
+        assert [finding["finding_id"] for finding in trace_payload["pii_findings"]] == [
+            finding["finding_id"] for finding in findings
+        ]
+        assert trace_payload["pii_redactions"][0]["redaction_id"] == redactions[0]["redaction_id"]

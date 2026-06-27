@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -88,6 +89,11 @@ def test_check_privacy_flags_external_provider_for_sensitive_source(tmp_path: Pa
         assert "| privacy_policy_violations | 1 |" in report_text
         assert "## Privacy Policy Violations" in report_text
         assert "| non_local_provider_for_sensitive_source | 1 |" in report_text
+
+        trace = runner.invoke(app, ["trace-claim", "claim_external"])
+        assert trace.exit_code == 0, trace.stdout
+        trace_payload = json.loads(trace.stdout)
+        assert trace_payload["privacy_policy_violations"][0]["violation_id"] == violations[0]["violation_id"]
 
 
 def test_check_privacy_uses_configured_local_providers(tmp_path: Path):

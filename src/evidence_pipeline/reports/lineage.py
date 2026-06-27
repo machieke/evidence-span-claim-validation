@@ -56,6 +56,40 @@ def _duplicate_groups_for_claim(rows: List[dict], claim_id: str) -> List[dict]:
     return [row for row in rows if claim_id in row.get("member_claim_ids", [])]
 
 
+def _report_rows_for_claim(rows: List[dict], anchor: Optional[dict], claim_id: str) -> List[dict]:
+    record_ids = {claim_id}
+    evidence_id = None
+    source_id = None
+    if anchor is not None:
+        evidence_id = anchor.get("evidence_id")
+        source_id = anchor.get("source_id")
+        for key in ("span_id", "evidence_id"):
+            value = anchor.get(key)
+            if value:
+                record_ids.add(value)
+
+    matched = []
+    for row in rows:
+        if row.get("claim_id") == claim_id:
+            matched.append(row)
+        elif evidence_id and row.get("evidence_id") == evidence_id:
+            matched.append(row)
+        elif row.get("record_id") in record_ids:
+            matched.append(row)
+        elif source_id and row.get("source_id") == source_id and row.get("artifact") == "sources":
+            matched.append(row)
+    return matched
+
+
+def _source_rows_for_claim(rows: List[dict], anchor: Optional[dict]) -> List[dict]:
+    if anchor is None:
+        return []
+    source_id = anchor.get("source_id")
+    if not source_id:
+        return []
+    return _all_by(rows, "source_id", source_id)
+
+
 def _jobs_for_claim(jobs: List[dict], anchor: Optional[dict], claim_id: str) -> List[dict]:
     if anchor is None:
         return []
@@ -100,6 +134,10 @@ def trace_claim(config: PipelineConfig, claim_id: str) -> Dict[str, Any]:
     model_routing = _optional_rows(config.paths.reports_dir / "model_routing.jsonl")
     repair_suggestions = _optional_rows(config.paths.reports_dir / "claim_repairs.jsonl")
     duplicate_groups = _optional_rows(config.paths.reports_dir / "claim_duplicates.jsonl")
+    pii_findings = _optional_rows(config.paths.reports_dir / "pii_findings.jsonl")
+    pii_redactions = _optional_rows(config.paths.reports_dir / "pii_redactions.jsonl")
+    privacy_violations = _optional_rows(config.paths.reports_dir / "privacy_policy_violations.jsonl")
+    retention_plan = _optional_rows(config.paths.reports_dir / "retention_plan.jsonl")
 
     raw_claim = _first_by(raw_claims, "claim_id", claim_id)
     validated_claim = _first_by(validated_claims, "claim_id", claim_id)
@@ -115,6 +153,9 @@ def trace_claim(config: PipelineConfig, claim_id: str) -> Dict[str, Any]:
     anchor = raw_claim or validated_claim or (normalized[0] if normalized else None)
     claim_jobs = _jobs_for_claim(jobs, anchor, claim_id)
     claim_model_routing = _routing_for_claim(model_routing, anchor, claim_id)
+    claim_pii_findings = _report_rows_for_claim(pii_findings, anchor, claim_id)
+    claim_pii_redactions = _report_rows_for_claim(pii_redactions, anchor, claim_id)
+    claim_retention_plan = _source_rows_for_claim(retention_plan, anchor)
     evidence = None
     span = None
     chunk = None
@@ -139,6 +180,10 @@ def trace_claim(config: PipelineConfig, claim_id: str) -> Dict[str, Any]:
         "validations": claim_validations,
         "jobs": claim_jobs,
         "model_routing": claim_model_routing,
+        "pii_findings": claim_pii_findings,
+        "pii_redactions": claim_pii_redactions,
+        "privacy_policy_violations": _all_by(privacy_violations, "claim_id", claim_id),
+        "retention_plan": claim_retention_plan,
         "review_decisions": claim_reviews,
         "audit_events": claim_audit_events,
         "validated_claim": validated_claim,
