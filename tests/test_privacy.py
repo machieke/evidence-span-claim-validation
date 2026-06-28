@@ -102,6 +102,13 @@ def test_check_privacy_flags_external_provider_for_sensitive_source(tmp_path: Pa
         trace_payload = json.loads(trace.stdout)
         assert trace_payload["privacy_policy_violations"][0]["violation_id"] == violations[0]["violation_id"]
 
+        artifact_check = runner.invoke(app, ["validate-artifacts", "--include-reports"])
+        assert artifact_check.exit_code == 0, artifact_check.stdout
+        assert (
+            "data/reports/privacy_policy_violations.jsonl: checked 1 records"
+            in artifact_check.stdout
+        )
+
 
 def test_model_invocation_privacy_guard_blocks_external_provider_for_sensitive_source(tmp_path: Path):
     with runner.isolated_filesystem(temp_dir=tmp_path):

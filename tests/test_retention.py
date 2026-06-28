@@ -86,6 +86,10 @@ def test_retention_plan_reports_old_raw_sources_without_deleting(tmp_path: Path)
             == candidates[0]["retention_id"]
         )
 
+        artifact_check = runner.invoke(app, ["validate-artifacts", "--include-reports"])
+        assert artifact_check.exit_code == 0, artifact_check.stdout
+        assert "data/reports/retention_plan.jsonl: checked 1 records" in artifact_check.stdout
+
 
 def test_retention_plan_uses_configured_retention_days(tmp_path: Path):
     with runner.isolated_filesystem(temp_dir=tmp_path):

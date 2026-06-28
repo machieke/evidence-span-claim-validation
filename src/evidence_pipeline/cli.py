@@ -1239,6 +1239,8 @@ def validate_artifacts(
     report_schema_by_key = {
         "claim_graph": "claim_graph",
         "model_routing": "model_routing",
+        "privacy_policy_violations": "privacy_policy_violations",
+        "retention_plan": "retention_plan",
         "review_queue": "review_queue",
     }
     failures = 0

@@ -8,6 +8,7 @@ from evidence_pipeline.config import PipelineConfig
 from evidence_pipeline.ids import stable_id
 from evidence_pipeline.jsonl import read_jsonl_records, write_jsonl
 from evidence_pipeline.schemas.claims import RawClaimRecord
+from evidence_pipeline.schemas.reports import PrivacyPolicyViolationRecord
 from evidence_pipeline.schemas.sources import SourceRecord
 
 LOCAL_ONLY_POLICY = "local_only_sensitive_sources"
@@ -138,18 +139,17 @@ def _violation(claim: RawClaimRecord, sensitive_keys: List[str]) -> dict:
             "policy": LOCAL_ONLY_POLICY,
         },
     )
-    return {
-        "violation_id": violation_id,
-        "source_id": claim.source_id,
-        "claim_id": claim.claim_id,
-        "evidence_id": claim.evidence_id,
-        "provider": provider,
-        "model": model_name,
-        "policy": LOCAL_ONLY_POLICY,
-        "reason_code": NON_LOCAL_PROVIDER_REASON,
-        "sensitive_metadata_keys": sensitive_keys,
-        "schema_version": "privacy.violation.v1",
-    }
+    return PrivacyPolicyViolationRecord(
+        violation_id=violation_id,
+        source_id=claim.source_id,
+        claim_id=claim.claim_id,
+        evidence_id=claim.evidence_id,
+        provider=provider,
+        model=model_name,
+        policy=LOCAL_ONLY_POLICY,
+        reason_code=NON_LOCAL_PROVIDER_REASON,
+        sensitive_metadata_keys=sensitive_keys,
+    ).model_dump(mode="json")
 
 
 def check_privacy_policy(config: PipelineConfig, output_path: Optional[Path] = None) -> PrivacyCheckResult:

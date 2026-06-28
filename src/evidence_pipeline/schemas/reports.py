@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import Field, model_validator
@@ -66,4 +67,61 @@ class ModelRoutingRecord(StrictModel):
                 raise ValueError(f"{field_name} must not be empty")
         if self.score is not None and not (0 <= self.score <= 1):
             raise ValueError("score must be between 0 and 1")
+        return self
+
+
+class PrivacyPolicyViolationRecord(StrictModel):
+    violation_id: str
+    source_id: str
+    claim_id: str
+    evidence_id: str
+    provider: str
+    model: str
+    policy: str
+    reason_code: str
+    sensitive_metadata_keys: List[str] = Field(default_factory=list)
+    schema_version: str = "privacy.violation.v1"
+
+    @model_validator(mode="after")
+    def validate_violation(self) -> "PrivacyPolicyViolationRecord":
+        for field_name in (
+            "violation_id",
+            "source_id",
+            "claim_id",
+            "evidence_id",
+            "provider",
+            "model",
+            "policy",
+            "reason_code",
+        ):
+            value = getattr(self, field_name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{field_name} must not be empty")
+        return self
+
+
+class RetentionPlanRecord(StrictModel):
+    retention_id: str
+    action: Literal["delete_raw_source"]
+    source_id: str
+    source_modality: SourceModality
+    source_file: str
+    source_uri: Optional[str] = None
+    ingested_at: datetime
+    age_days: int
+    retention_days: int
+    reason_code: str
+    dry_run: bool = True
+    schema_version: str = "retention.plan.v1"
+
+    @model_validator(mode="after")
+    def validate_retention_plan(self) -> "RetentionPlanRecord":
+        for field_name in ("retention_id", "source_id", "source_file", "reason_code"):
+            value = getattr(self, field_name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{field_name} must not be empty")
+        if self.age_days < 0:
+            raise ValueError("age_days must be non-negative")
+        if self.retention_days < 1:
+            raise ValueError("retention_days must be positive")
         return self

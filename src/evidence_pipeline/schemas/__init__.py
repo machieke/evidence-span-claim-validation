@@ -14,7 +14,12 @@ from evidence_pipeline.schemas.image import (
 from evidence_pipeline.schemas.jobs import JobRecord
 from evidence_pipeline.schemas.pdf import PDFBlockRecord
 from evidence_pipeline.schemas.review import ReviewDecisionRecord, ReviewQueueRecord
-from evidence_pipeline.schemas.reports import GraphEdgeRecord, ModelRoutingRecord
+from evidence_pipeline.schemas.reports import (
+    GraphEdgeRecord,
+    ModelRoutingRecord,
+    PrivacyPolicyViolationRecord,
+    RetentionPlanRecord,
+)
 from evidence_pipeline.schemas.sources import SourceRecord
 from evidence_pipeline.schemas.spans import SpanRecord
 from evidence_pipeline.schemas.validation import ErrorRecord, QuarantineRecord, ValidationRecord
@@ -74,6 +79,11 @@ SCHEMA_REGISTRY = {
     "claim_graph": GraphEdgeRecord,
     "model_routing": ModelRoutingRecord,
     "model-routing": ModelRoutingRecord,
+    "privacy_policy_violation": PrivacyPolicyViolationRecord,
+    "privacy-policy-violation": PrivacyPolicyViolationRecord,
+    "privacy_policy_violations": PrivacyPolicyViolationRecord,
+    "retention_plan": RetentionPlanRecord,
+    "retention-plan": RetentionPlanRecord,
     "error": ErrorRecord,
     "errors": ErrorRecord,
 }
@@ -96,6 +106,8 @@ __all__ = [
     "PDFBlockRecord",
     "QuarantineRecord",
     "RawClaimRecord",
+    "PrivacyPolicyViolationRecord",
+    "RetentionPlanRecord",
     "ReviewDecisionRecord",
     "ReviewQueueRecord",
     "SCHEMA_REGISTRY",

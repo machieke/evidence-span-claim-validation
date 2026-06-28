@@ -8,6 +8,7 @@ from typing import Optional
 from evidence_pipeline.config import PipelineConfig
 from evidence_pipeline.ids import stable_id
 from evidence_pipeline.jsonl import read_jsonl_records, write_jsonl
+from evidence_pipeline.schemas.reports import RetentionPlanRecord
 from evidence_pipeline.schemas.sources import SourceRecord
 
 
@@ -25,8 +26,8 @@ def _utc(value: datetime) -> datetime:
 
 def _candidate_record(source: SourceRecord, age_days: int, retention_days: int) -> dict:
     action = "delete_raw_source"
-    return {
-        "retention_id": stable_id(
+    return RetentionPlanRecord(
+        retention_id=stable_id(
             "retention",
             {
                 "source_id": source.source_id,
@@ -35,18 +36,17 @@ def _candidate_record(source: SourceRecord, age_days: int, retention_days: int) 
                 "retention_days": retention_days,
             },
         ),
-        "action": action,
-        "source_id": source.source_id,
-        "source_modality": source.source_modality,
-        "source_file": source.source_file,
-        "source_uri": source.source_uri,
-        "ingested_at": source.ingested_at.isoformat(),
-        "age_days": age_days,
-        "retention_days": retention_days,
-        "reason_code": "raw_source_retention_exceeded",
-        "dry_run": True,
-        "schema_version": "retention.plan.v1",
-    }
+        action=action,
+        source_id=source.source_id,
+        source_modality=source.source_modality,
+        source_file=source.source_file,
+        source_uri=source.source_uri,
+        ingested_at=source.ingested_at,
+        age_days=age_days,
+        retention_days=retention_days,
+        reason_code="raw_source_retention_exceeded",
+        dry_run=True,
+    ).model_dump(mode="json", exclude_none=True)
 
 
 def write_retention_plan(
