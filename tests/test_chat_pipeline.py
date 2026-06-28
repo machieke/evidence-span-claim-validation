@@ -116,6 +116,16 @@ def test_chat_pipeline_is_idempotent(tmp_path: Path):
         assert {edge["predicate"] for edge in edges} >= {"asserts", "asks_whether"}
         assert all(edge["truth_status"] == "speaker_asserted_unverified" for edge in edges)
         assert all(edge["attribution"]["type"] == "speaker" for edge in edges)
+        jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
+        assert [job["stage"] for job in jobs] == [
+            "extract_claims",
+            "validate_claims",
+            "normalize_claims",
+            "route_models",
+            "export_graph",
+        ]
+        assert jobs[-1]["model_id"] == "graph.export.v1"
+        assert jobs[-1]["metrics"] == {"edges": 3}
         graph_trace = runner.invoke(app, ["trace-claim", raw_claims[0]["claim_id"]])
         assert graph_trace.exit_code == 0, graph_trace.stdout
         graph_trace_payload = json.loads(graph_trace.stdout)

@@ -15,6 +15,7 @@ from evidence_pipeline.schemas.reports import ModelRoutingRecord
 from evidence_pipeline.schemas.spans import SpanRecord
 
 ROUTING_STAGES = {"all", "extraction", "validation"}
+MODEL_ROUTING_VERSION = "model.routing.v1"
 
 
 class ModelNames(BaseModel):

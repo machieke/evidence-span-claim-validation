@@ -104,9 +104,19 @@ def test_gold_eval_reports_quarantine_precision_and_recall(tmp_path: Path):
         assert metrics[0]["quarantine_precision"] == 0.5
         assert metrics[0]["quarantine_recall"] == 0.5
 
+        jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
+        assert len(jobs) == 1
+        assert jobs[0]["stage"] == "eval_gold"
+        assert jobs[0]["model_id"] == "gold.eval.v1"
+        assert jobs[0]["input_record_ids"] == ["claims_validated", "gold:gold.json", "quarantine"]
+        assert jobs[0]["metrics"]["gold_claims"] == 3
+        assert jobs[0]["metrics"]["quarantine_recall"] == 0.5
+
         summary = runner.invoke(app, ["report"])
         assert summary.exit_code == 0, summary.stdout
         summary_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
+        assert "| jobs | 1 |" in summary_text
+        assert "| eval_gold | 1 |" in summary_text
         assert "| gold_eval | 1 |" in summary_text
         assert "| Gold accepted precision | 100.0% |" in summary_text
         assert "| Gold quarantine precision | 50.0% |" in summary_text

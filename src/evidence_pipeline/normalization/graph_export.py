@@ -10,6 +10,8 @@ from evidence_pipeline.jsonl import read_jsonl_records, write_jsonl
 from evidence_pipeline.schemas.claims import NormalizedClaimRecord
 from evidence_pipeline.schemas.reports import GraphEdgeRecord
 
+GRAPH_EXPORT_VERSION = "graph.export.v1"
+
 
 @dataclass
 class GraphExportResult:

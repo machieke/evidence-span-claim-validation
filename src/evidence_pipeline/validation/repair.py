@@ -14,6 +14,8 @@ from evidence_pipeline.schemas.spans import SpanRecord
 from evidence_pipeline.spans.sentence_splitter import split_sentences
 from evidence_pipeline.validation.text_support import normalize_text_for_matching
 
+REPAIR_SUGGESTION_VERSION = "claim.repair_suggestion.v1"
+
 
 @dataclass
 class RepairSuggestionResult:

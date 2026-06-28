@@ -10,6 +10,8 @@ from evidence_pipeline.ids import stable_id
 from evidence_pipeline.jsonl import ensure_parent, read_jsonl, write_jsonl
 from evidence_pipeline.schemas.reports import GoldEvaluationRecord
 
+GOLD_EVAL_VERSION = "gold.eval.v1"
+
 GoldKey = Tuple[str, str]
 
 

@@ -61,6 +61,13 @@ def test_repair_claims_suggests_exact_evidence_text(tmp_path: Path):
         assert suggestions[0]["suggested_evidence_text"] == "The vessel Hope appears old."
         assert suggestions[0]["support_scope"] == "span"
 
+        jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
+        assert len(jobs) == 1
+        assert jobs[0]["stage"] == "repair_claims"
+        assert jobs[0]["model_id"] == "claim.repair_suggestion.v1"
+        assert jobs[0]["input_record_ids"] == ["claims_raw", "evidence", "spans"]
+        assert jobs[0]["metrics"] == {"suggestions": 1}
+
         invalid = runner.invoke(app, ["repair-claims", "--only", "unsupported_entities_introduced"])
         assert invalid.exit_code != 0
         assert "repair-claims supports reason codes" in invalid.stdout
@@ -68,6 +75,8 @@ def test_repair_claims_suggests_exact_evidence_text(tmp_path: Path):
         report = runner.invoke(app, ["report"])
         assert report.exit_code == 0, report.stdout
         report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
+        assert "| jobs | 1 |" in report_text
+        assert "| repair_claims | 1 |" in report_text
         assert "| Evidence repair suggestion rate | 100.0% |" in report_text
         assert "| Evidence repair suggestions | 1 |" in report_text
 

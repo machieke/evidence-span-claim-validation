@@ -3,7 +3,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from evidence_pipeline.cli import app
-from evidence_pipeline.jsonl import append_jsonl
+from evidence_pipeline.jsonl import append_jsonl, read_jsonl
 from evidence_pipeline.schemas.claims import NormalizedClaimRecord
 
 
@@ -42,3 +42,10 @@ def test_export_metta_writes_normalized_claim_expressions(tmp_path: Path):
         assert '(claim "nclaim_1" "claim_1" "src_1" "ev_1" "speaker:alice" "asserts"' in output
         assert '"Hope had three masts."' in output
         assert '\\"truth_status\\":\\"speaker_asserted_unverified\\"' in output
+
+        jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
+        assert len(jobs) == 1
+        assert jobs[0]["stage"] == "export_metta"
+        assert jobs[0]["model_id"] == "metta.claim_export.v1"
+        assert jobs[0]["input_record_ids"] == ["claims_normalized"]
+        assert jobs[0]["metrics"] == {"claims": 1}

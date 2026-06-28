@@ -106,9 +106,18 @@ routing:
         assert recommendations["claim_image"]["reasons"] == ["modality:image"]
         assert "Hope had three masts." not in output_text
 
+        jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
+        assert len(jobs) == 1
+        assert jobs[0]["stage"] == "route_models"
+        assert jobs[0]["model_id"] == "model.routing.v1"
+        assert jobs[0]["input_record_ids"] == ["models_config:models.yaml", "stage:all"]
+        assert jobs[0]["metrics"] == {"recommendations": 4}
+
         report = runner.invoke(app, ["report"])
         assert report.exit_code == 0, report.stdout
         report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
+        assert "| jobs | 1 |" in report_text
+        assert "| route_models | 1 |" in report_text
         assert "## Model Routing By Tier" in report_text
         assert "| default | 1 |" in report_text
         assert "| strong | 3 |" in report_text

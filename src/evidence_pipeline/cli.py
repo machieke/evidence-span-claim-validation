@@ -31,14 +31,14 @@ from evidence_pipeline.ingest.pdf_evidence import build_pdf_evidence
 from evidence_pipeline.ids import sha256_file, stable_id
 from evidence_pipeline.jobs import record_job_result
 from evidence_pipeline.jsonl import JSONLDecodeError, append_jsonl, find_record, read_jsonl
-from evidence_pipeline.model_routing import write_model_routing_report
+from evidence_pipeline.model_routing import MODEL_ROUTING_VERSION, write_model_routing_report
 from evidence_pipeline.normalization.claims import NORMALIZER_VERSION, normalize_claims
-from evidence_pipeline.normalization.dedupe import dedupe_normalized_claims
-from evidence_pipeline.normalization.graph_export import export_graph_jsonl
-from evidence_pipeline.normalization.metta_export import export_metta
+from evidence_pipeline.normalization.dedupe import DEDUPE_VERSION, dedupe_normalized_claims
+from evidence_pipeline.normalization.graph_export import GRAPH_EXPORT_VERSION, export_graph_jsonl
+from evidence_pipeline.normalization.metta_export import METTA_EXPORT_VERSION, export_metta
 from evidence_pipeline.retention import RETENTION_PLAN_VERSION, write_retention_plan
 from evidence_pipeline.reports.summary import write_summary_report
-from evidence_pipeline.reports.gold_eval import write_gold_eval_report
+from evidence_pipeline.reports.gold_eval import GOLD_EVAL_VERSION, write_gold_eval_report
 from evidence_pipeline.reports.lineage import (
     default_claim_trace_html_path,
     trace_claim,
@@ -61,7 +61,11 @@ from evidence_pipeline.spans.rule_highlighter import (
 from evidence_pipeline.validation.deterministic import VALIDATOR_VERSION, validate_raw_claims
 from evidence_pipeline.validation.pii import PII_PROCESSOR_VERSION, detect_pii, redact_pii
 from evidence_pipeline.validation.privacy import PRIVACY_CHECK_VERSION, check_privacy_policy
-from evidence_pipeline.validation.repair import REPAIR_REASON_CODES, suggest_evidence_repairs
+from evidence_pipeline.validation.repair import (
+    REPAIR_REASON_CODES,
+    REPAIR_SUGGESTION_VERSION,
+    suggest_evidence_repairs,
+)
 from evidence_pipeline.validation.review import record_claim_review, write_review_queue
 from evidence_pipeline.validation.schema_repair import SCHEMA_REPAIR_VERSION, import_raw_claim_candidates
 
@@ -972,6 +976,18 @@ def route_models_command(
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc))
+    record_job_result(
+        config,
+        stage="route_models",
+        input_record_ids=[f"models_config:{models_config}", f"stage:{stage}"],
+        model_id=MODEL_ROUTING_VERSION,
+        metrics={"recommendations": result.recommendation_count},
+        metadata={
+            "models_config": str(models_config),
+            "output_path": str(result.output_path),
+            "stage": stage,
+        },
+    )
     typer.echo(f"{result.output_path} recommendations={result.recommendation_count}")
 
 
@@ -1001,6 +1017,14 @@ def export_graph_command(
     config = load_config(config_path)
     _init_paths(config)
     result = export_graph_jsonl(config, output_path=output)
+    record_job_result(
+        config,
+        stage="export_graph",
+        input_record_ids=["claims_normalized"],
+        model_id=GRAPH_EXPORT_VERSION,
+        metrics={"edges": result.edge_count},
+        metadata={"format": format, "output_path": str(result.output_path)},
+    )
     typer.echo(f"{result.output_path} edges={result.edge_count}")
 
 
@@ -1028,6 +1052,14 @@ def export_metta_command(
     config = load_config(config_path)
     _init_paths(config)
     result = export_metta(config, output_path=output)
+    record_job_result(
+        config,
+        stage="export_metta",
+        input_record_ids=["claims_normalized"],
+        model_id=METTA_EXPORT_VERSION,
+        metrics={"claims": result.claim_count},
+        metadata={"output_path": str(result.output_path)},
+    )
     typer.echo(f"{result.output_path} claims={result.claim_count}")
 
 
@@ -1046,6 +1078,24 @@ def eval_gold_command(
         result = write_gold_eval_report(config, gold_file, output_path=output)
     except ValueError as exc:
         raise typer.BadParameter(str(exc))
+    record_job_result(
+        config,
+        stage="eval_gold",
+        input_record_ids=["claims_validated", "quarantine", f"gold:{gold_file}"],
+        model_id=GOLD_EVAL_VERSION,
+        metrics={
+            "gold_claims": result.metrics["gold_claims"],
+            "accepted_precision": result.metrics["accepted_precision"],
+            "accepted_recall": result.metrics["accepted_recall"],
+            "quarantine_precision": result.metrics["quarantine_precision"],
+            "quarantine_recall": result.metrics["quarantine_recall"],
+        },
+        metadata={
+            "gold_path": str(gold_file),
+            "metrics_path": str(result.metrics_path),
+            "output_path": str(result.output_path),
+        },
+    )
     typer.echo(
         f"{result.output_path} accepted_precision={result.metrics['accepted_precision']} "
         f"accepted_recall={result.metrics['accepted_recall']} "
@@ -1137,6 +1187,14 @@ def dedupe_claims_command(
     config = load_config(config_path)
     _init_paths(config)
     result = dedupe_normalized_claims(config, output_path=output, include_singletons=include_singletons)
+    record_job_result(
+        config,
+        stage="dedupe_claims",
+        input_record_ids=["claims_normalized"],
+        model_id=DEDUPE_VERSION,
+        metrics={"groups": result.group_count},
+        metadata={"include_singletons": include_singletons, "output_path": str(result.output_path)},
+    )
     typer.echo(f"{result.output_path} groups={result.group_count}")
 
 
@@ -1155,6 +1213,14 @@ def repair_claims_command(
         requested = ", ".join(unknown_reasons)
         raise typer.BadParameter(f"repair-claims supports reason codes: {supported}; unsupported: {requested}")
     result = suggest_evidence_repairs(config, output_path=output, only_reason_codes=only)
+    record_job_result(
+        config,
+        stage="repair_claims",
+        input_record_ids=["claims_raw", "evidence", "spans"],
+        model_id=REPAIR_SUGGESTION_VERSION,
+        metrics={"suggestions": result.suggestion_count},
+        metadata={"only_reason_codes": sorted(only or []), "output_path": str(result.output_path)},
+    )
     typer.echo(f"{result.output_path} suggestions={result.suggestion_count}")
 
 

@@ -50,10 +50,23 @@ def test_dedupe_claims_groups_duplicate_normalized_claims(tmp_path: Path):
         assert groups[0]["member_count"] == 2
         assert groups[0]["member_claim_ids"] == ["claim_1", "claim_2"]
 
+        jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
+        assert len(jobs) == 1
+        assert jobs[0]["stage"] == "dedupe_claims"
+        assert jobs[0]["model_id"] == "claim.dedupe.v1"
+        assert jobs[0]["input_record_ids"] == ["claims_normalized"]
+        assert jobs[0]["metrics"] == {"groups": 1}
+
         trace = runner.invoke(app, ["trace-claim", "claim_1"])
         assert trace.exit_code == 0, trace.stdout
         trace_payload = json.loads(trace.stdout)
         assert trace_payload["duplicate_groups"][0]["dedupe_id"] == groups[0]["dedupe_id"]
+
+        report = runner.invoke(app, ["report"])
+        assert report.exit_code == 0, report.stdout
+        report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
+        assert "| jobs | 1 |" in report_text
+        assert "| dedupe_claims | 1 |" in report_text
 
         artifact_check = runner.invoke(app, ["validate-artifacts", "--include-reports"])
         assert artifact_check.exit_code == 0, artifact_check.stdout

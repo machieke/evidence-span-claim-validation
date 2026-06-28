@@ -9,6 +9,8 @@ from evidence_pipeline.config import PipelineConfig
 from evidence_pipeline.jsonl import ensure_parent, read_jsonl_records
 from evidence_pipeline.schemas.claims import NormalizedClaimRecord
 
+METTA_EXPORT_VERSION = "metta.claim_export.v1"
+
 
 @dataclass
 class MeTTaExportResult:
@@ -51,7 +53,7 @@ def export_metta(config: PipelineConfig, output_path: Optional[Path] = None) -> 
         output_path = config.paths.reports_dir / "claims.metta"
     paths = config.jsonl_paths()
     lines = [
-        "; schema: metta.claim_export.v1",
+        f"; schema: {METTA_EXPORT_VERSION}",
         "; (claim normalized_claim_id claim_id source_id evidence_id subject predicate object_json qualifiers_json)",
     ]
     claim_count = 0
