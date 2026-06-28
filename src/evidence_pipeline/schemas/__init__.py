@@ -17,6 +17,8 @@ from evidence_pipeline.schemas.review import ReviewDecisionRecord, ReviewQueueRe
 from evidence_pipeline.schemas.reports import (
     GraphEdgeRecord,
     ModelRoutingRecord,
+    PIIFindingRecord,
+    PIIRedactionRecord,
     PrivacyPolicyViolationRecord,
     RetentionPlanRecord,
 )
@@ -84,6 +86,12 @@ SCHEMA_REGISTRY = {
     "privacy_policy_violations": PrivacyPolicyViolationRecord,
     "retention_plan": RetentionPlanRecord,
     "retention-plan": RetentionPlanRecord,
+    "pii_finding": PIIFindingRecord,
+    "pii-finding": PIIFindingRecord,
+    "pii_findings": PIIFindingRecord,
+    "pii_redaction": PIIRedactionRecord,
+    "pii-redaction": PIIRedactionRecord,
+    "pii_redactions": PIIRedactionRecord,
     "error": ErrorRecord,
     "errors": ErrorRecord,
 }
@@ -104,6 +112,8 @@ __all__ = [
     "NormalizedClaimRecord",
     "ModelRoutingRecord",
     "PDFBlockRecord",
+    "PIIFindingRecord",
+    "PIIRedactionRecord",
     "QuarantineRecord",
     "RawClaimRecord",
     "PrivacyPolicyViolationRecord",

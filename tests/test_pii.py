@@ -76,6 +76,10 @@ def test_detect_pii_writes_redacted_findings_without_raw_matches(tmp_path: Path)
         assert "alice@example.com" not in payload_json
         assert "415-555-1212" not in payload_json
 
+        artifact_check = runner.invoke(app, ["validate-artifacts", "--include-reports"])
+        assert artifact_check.exit_code == 0, artifact_check.stdout
+        assert "data/reports/pii_findings.jsonl: checked 2 records" in artifact_check.stdout
+
         invalid = runner.invoke(app, ["detect-pii", "--artifact", "images"])
         assert invalid.exit_code != 0
         assert "PII detection supports artifacts" in invalid.stdout
@@ -157,6 +161,10 @@ def test_redact_pii_writes_redacted_copy_without_mutating_source(tmp_path: Path)
         source_text = source_path.read_text(encoding="utf-8")
         assert "alice@example.com" in source_text
         assert "415-555-1212" in source_text
+
+        artifact_check = runner.invoke(app, ["validate-artifacts", "--include-reports"])
+        assert artifact_check.exit_code == 0, artifact_check.stdout
+        assert "data/reports/pii_redactions.jsonl: checked 1 records" in artifact_check.stdout
 
         invalid = runner.invoke(app, ["redact-pii", "--artifact", "all"])
         assert invalid.exit_code != 0

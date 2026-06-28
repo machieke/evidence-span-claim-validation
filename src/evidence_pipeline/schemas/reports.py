@@ -125,3 +125,61 @@ class RetentionPlanRecord(StrictModel):
         if self.retention_days < 1:
             raise ValueError("retention_days must be positive")
         return self
+
+
+class PIIFindingRecord(StrictModel):
+    finding_id: str
+    artifact: str
+    record_id: str
+    source_id: Optional[str] = None
+    evidence_id: Optional[str] = None
+    claim_id: Optional[str] = None
+    field: str
+    pii_type: Literal["email", "phone", "ssn"]
+    match_hash: str
+    redacted_preview: str
+    char_start: int
+    char_end: int
+    schema_version: str = "pii.finding.v1"
+
+    @model_validator(mode="after")
+    def validate_finding(self) -> "PIIFindingRecord":
+        for field_name in (
+            "finding_id",
+            "artifact",
+            "record_id",
+            "field",
+            "match_hash",
+            "redacted_preview",
+        ):
+            value = getattr(self, field_name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{field_name} must not be empty")
+        if self.char_start < 0 or self.char_end <= self.char_start:
+            raise ValueError("PII finding character offsets are invalid")
+        return self
+
+
+class PIIRedactionRecord(StrictModel):
+    redaction_id: str
+    artifact: str
+    record_id: str
+    source_id: Optional[str] = None
+    evidence_id: Optional[str] = None
+    claim_id: Optional[str] = None
+    fields: List[str] = Field(default_factory=list)
+    replacement_count: int
+    output_path: str
+    schema_version: str = "pii.redaction.v1"
+
+    @model_validator(mode="after")
+    def validate_redaction(self) -> "PIIRedactionRecord":
+        for field_name in ("redaction_id", "artifact", "record_id", "output_path"):
+            value = getattr(self, field_name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{field_name} must not be empty")
+        if not self.fields:
+            raise ValueError("PII redaction records require at least one field")
+        if self.replacement_count < 1:
+            raise ValueError("replacement_count must be positive")
+        return self

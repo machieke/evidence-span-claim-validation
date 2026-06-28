@@ -9,6 +9,7 @@ from typing import Iterable, List, Optional
 from evidence_pipeline.config import PipelineConfig
 from evidence_pipeline.ids import stable_id
 from evidence_pipeline.jsonl import read_jsonl, write_jsonl
+from evidence_pipeline.schemas.reports import PIIFindingRecord, PIIRedactionRecord
 
 PII_PATTERNS = {
     "email": re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE),
@@ -98,8 +99,8 @@ def _findings_for_text(
         for match in pattern.finditer(text):
             raw_match = match.group(0)
             match_hash = _match_hash(raw_match)
-            yield {
-                "finding_id": stable_id(
+            yield PIIFindingRecord(
+                finding_id=stable_id(
                     "pii",
                     {
                         "artifact": artifact_name,
@@ -109,19 +110,18 @@ def _findings_for_text(
                         "match_hash": match_hash,
                     },
                 ),
-                "artifact": artifact_name,
-                "record_id": record_id,
-                "source_id": payload.get("source_id"),
-                "evidence_id": payload.get("evidence_id"),
-                "claim_id": payload.get("claim_id"),
-                "field": field_name,
-                "pii_type": pii_type,
-                "match_hash": match_hash,
-                "redacted_preview": _redacted_preview(pii_type, raw_match),
-                "char_start": match.start(),
-                "char_end": match.end(),
-                "schema_version": "pii.finding.v1",
-            }
+                artifact=artifact_name,
+                record_id=record_id,
+                source_id=payload.get("source_id"),
+                evidence_id=payload.get("evidence_id"),
+                claim_id=payload.get("claim_id"),
+                field=field_name,
+                pii_type=pii_type,
+                match_hash=match_hash,
+                redacted_preview=_redacted_preview(pii_type, raw_match),
+                char_start=match.start(),
+                char_end=match.end(),
+            ).model_dump(mode="json", exclude_none=True)
 
 
 def _scan_artifact(config: PipelineConfig, artifact_name: str) -> List[dict]:
@@ -170,8 +170,8 @@ def _redaction_record(
 ) -> dict:
     record_id_field = ARTIFACT_RECORD_ID_FIELDS[artifact_name]
     record_id = str(payload.get(record_id_field) or f"{artifact_name}:{line_number}")
-    return {
-        "redaction_id": stable_id(
+    return PIIRedactionRecord(
+        redaction_id=stable_id(
             "redact",
             {
                 "artifact": artifact_name,
@@ -180,16 +180,15 @@ def _redaction_record(
                 "output_path": str(output_path),
             },
         ),
-        "artifact": artifact_name,
-        "record_id": record_id,
-        "source_id": payload.get("source_id"),
-        "evidence_id": payload.get("evidence_id"),
-        "claim_id": payload.get("claim_id"),
-        "fields": redacted_fields,
-        "replacement_count": replacement_count,
-        "output_path": str(output_path),
-        "schema_version": "pii.redaction.v1",
-    }
+        artifact=artifact_name,
+        record_id=record_id,
+        source_id=payload.get("source_id"),
+        evidence_id=payload.get("evidence_id"),
+        claim_id=payload.get("claim_id"),
+        fields=redacted_fields,
+        replacement_count=replacement_count,
+        output_path=str(output_path),
+    ).model_dump(mode="json", exclude_none=True)
 
 
 def detect_pii(

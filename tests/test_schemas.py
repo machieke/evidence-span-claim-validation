@@ -6,6 +6,8 @@ from evidence_pipeline.schemas.evidence import EvidenceRecord
 from evidence_pipeline.schemas.reports import (
     GraphEdgeRecord,
     ModelRoutingRecord,
+    PIIFindingRecord,
+    PIIRedactionRecord,
     PrivacyPolicyViolationRecord,
     RetentionPlanRecord,
 )
@@ -212,4 +214,58 @@ def test_retention_plan_record_requires_positive_retention_days():
             age_days=400,
             retention_days=0,
             reason_code="raw_source_retention_exceeded",
+        )
+
+
+def test_pii_finding_record_requires_valid_offsets():
+    record = PIIFindingRecord(
+        finding_id="pii_1",
+        artifact="chat_messages",
+        record_id="msg_1",
+        field="text",
+        pii_type="email",
+        match_hash="hash_1",
+        redacted_preview="a***@example.com",
+        char_start=6,
+        char_end=23,
+    )
+
+    assert record.schema_version == "pii.finding.v1"
+    assert SCHEMA_REGISTRY["pii_findings"] is PIIFindingRecord
+
+    with pytest.raises(ValidationError):
+        PIIFindingRecord(
+            finding_id="pii_2",
+            artifact="chat_messages",
+            record_id="msg_1",
+            field="text",
+            pii_type="email",
+            match_hash="hash_1",
+            redacted_preview="a***@example.com",
+            char_start=23,
+            char_end=6,
+        )
+
+
+def test_pii_redaction_record_requires_fields_and_replacements():
+    record = PIIRedactionRecord(
+        redaction_id="redact_1",
+        artifact="chat_messages",
+        record_id="msg_1",
+        fields=["text"],
+        replacement_count=1,
+        output_path="data/reports/chat_messages.redacted.jsonl",
+    )
+
+    assert record.schema_version == "pii.redaction.v1"
+    assert SCHEMA_REGISTRY["pii_redactions"] is PIIRedactionRecord
+
+    with pytest.raises(ValidationError):
+        PIIRedactionRecord(
+            redaction_id="redact_2",
+            artifact="chat_messages",
+            record_id="msg_1",
+            fields=[],
+            replacement_count=0,
+            output_path="data/reports/chat_messages.redacted.jsonl",
         )
