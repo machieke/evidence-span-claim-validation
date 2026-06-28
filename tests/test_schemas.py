@@ -1,7 +1,9 @@
 import pytest
 from pydantic import ValidationError
 
+from evidence_pipeline.schemas import SCHEMA_REGISTRY
 from evidence_pipeline.schemas.evidence import EvidenceRecord
+from evidence_pipeline.schemas.review import ReviewQueueRecord
 from evidence_pipeline.schemas.spans import SpanRecord
 
 
@@ -39,4 +41,36 @@ def test_span_score_bounds():
             text="claim",
             label="claim_bearing",
             score=1.1,
+        )
+
+
+def test_review_queue_record_requires_valid_state_and_claim_id():
+    record = ReviewQueueRecord(
+        review_queue_id="reviewq_1",
+        claim_id="claim_1",
+        source_id="src_1",
+        evidence_id="ev_1",
+        source_modality="image",
+        validation_status="quarantined",
+        reason_codes=["image_label_low_confidence"],
+        review_state="unreviewed",
+    )
+
+    assert record.schema_version == "review.queue.v1"
+    assert SCHEMA_REGISTRY["review_queue"] is ReviewQueueRecord
+
+    with pytest.raises(ValidationError):
+        ReviewQueueRecord(
+            review_queue_id="reviewq_2",
+            claim_id="claim_2",
+            validation_status="quarantined",
+            review_state="done",
+        )
+
+    with pytest.raises(ValidationError):
+        ReviewQueueRecord(
+            review_queue_id="",
+            claim_id="claim_3",
+            validation_status="quarantined",
+            review_state="unreviewed",
         )

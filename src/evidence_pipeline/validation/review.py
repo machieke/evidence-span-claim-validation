@@ -18,7 +18,7 @@ from evidence_pipeline.jsonl import (
 )
 from evidence_pipeline.schemas.audit import AuditEventRecord
 from evidence_pipeline.schemas.base import utc_now
-from evidence_pipeline.schemas.review import ReviewDecisionRecord
+from evidence_pipeline.schemas.review import ReviewDecisionRecord, ReviewQueueRecord
 
 REVIEW_DECISIONS = {"accept", "reject", "needs_review"}
 REVIEW_QUEUE_FORMATS = {"jsonl", "html"}
@@ -101,8 +101,8 @@ def _review_queue_item(
     claim_risk_flags = claim.get("risk_flags", [])
     validation_errors = validation.get("errors", []) if validation else []
     validation_warnings = validation.get("warnings", []) if validation else []
-    return {
-        "review_queue_id": stable_id(
+    record = ReviewQueueRecord(
+        review_queue_id=stable_id(
             "reviewq",
             {
                 "claim_id": claim.get("claim_id"),
@@ -110,27 +110,27 @@ def _review_queue_item(
                 "review_id": latest_review.review_id if latest_review else None,
             },
         ),
-        "claim_id": claim.get("claim_id"),
-        "source_id": claim.get("source_id"),
-        "evidence_id": claim.get("evidence_id"),
-        "source_file": source.get("source_file") if source else None,
-        "source_modality": claim.get("source_modality"),
-        "claim_type": claim.get("claim_type"),
-        "source_faithful_claim": claim.get("source_faithful_claim"),
-        "evidence_text": claim.get("evidence_text") or (evidence or {}).get("text"),
-        "evidence": {
+        claim_id=str(claim.get("claim_id")),
+        source_id=claim.get("source_id"),
+        evidence_id=claim.get("evidence_id"),
+        source_file=source.get("source_file") if source else None,
+        source_modality=claim.get("source_modality"),
+        claim_type=claim.get("claim_type"),
+        source_faithful_claim=claim.get("source_faithful_claim"),
+        evidence_text=claim.get("evidence_text") or (evidence or {}).get("text"),
+        evidence={
             "evidence_type": evidence.get("evidence_type") if evidence else None,
             "provenance": evidence.get("provenance", {}) if evidence else {},
             "risk_flags": evidence_risk_flags,
         },
-        "validation_status": validation.get("status") if validation else "unvalidated",
-        "reason_codes": validation_errors,
-        "warnings": validation_warnings,
-        "risk_flags": sorted(set(claim_risk_flags) | set(evidence_risk_flags)),
-        "review_state": latest_review.decision if latest_review else "unreviewed",
-        "latest_review": latest_review.model_dump(mode="json") if latest_review else None,
-        "schema_version": "review.queue.v1",
-    }
+        validation_status=validation.get("status") if validation else "unvalidated",
+        reason_codes=validation_errors,
+        warnings=validation_warnings,
+        risk_flags=sorted(set(claim_risk_flags) | set(evidence_risk_flags)),
+        review_state=latest_review.decision if latest_review else "unreviewed",
+        latest_review=latest_review.model_dump(mode="json") if latest_review else None,
+    )
+    return record.model_dump(mode="json", exclude_none=True)
 
 
 def _default_review_queue_path(config: PipelineConfig, output_format: str) -> Path:

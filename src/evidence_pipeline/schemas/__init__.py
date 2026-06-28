@@ -13,7 +13,7 @@ from evidence_pipeline.schemas.image import (
 )
 from evidence_pipeline.schemas.jobs import JobRecord
 from evidence_pipeline.schemas.pdf import PDFBlockRecord
-from evidence_pipeline.schemas.review import ReviewDecisionRecord
+from evidence_pipeline.schemas.review import ReviewDecisionRecord, ReviewQueueRecord
 from evidence_pipeline.schemas.sources import SourceRecord
 from evidence_pipeline.schemas.spans import SpanRecord
 from evidence_pipeline.schemas.validation import ErrorRecord, QuarantineRecord, ValidationRecord
@@ -60,6 +60,8 @@ SCHEMA_REGISTRY = {
     "review_decision": ReviewDecisionRecord,
     "review-decision": ReviewDecisionRecord,
     "review_decisions": ReviewDecisionRecord,
+    "review_queue": ReviewQueueRecord,
+    "review-queue": ReviewQueueRecord,
     "audit_event": AuditEventRecord,
     "audit-event": AuditEventRecord,
     "audit_events": AuditEventRecord,
@@ -87,6 +89,7 @@ __all__ = [
     "QuarantineRecord",
     "RawClaimRecord",
     "ReviewDecisionRecord",
+    "ReviewQueueRecord",
     "SCHEMA_REGISTRY",
     "SourceModality",
     "SourceRecord",
