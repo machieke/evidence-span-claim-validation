@@ -4,11 +4,12 @@ import hashlib
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Optional
+from typing import Iterable, List, Optional, Set
 
 from evidence_pipeline.config import PipelineConfig
 from evidence_pipeline.ids import stable_id
-from evidence_pipeline.jsonl import read_jsonl, write_jsonl
+from evidence_pipeline.jsonl import append_jsonl, existing_values, read_jsonl, write_jsonl
+from evidence_pipeline.schemas.audit import AuditEventRecord
 from evidence_pipeline.schemas.reports import PIIFindingRecord, PIIRedactionRecord
 
 PII_PROCESSOR_VERSION = "pii.regex.v1"
@@ -193,6 +194,102 @@ def _redaction_record(
     ).model_dump(mode="json", exclude_none=True)
 
 
+def _audit_event_id(action: str, target_id: str, output_path: Path) -> str:
+    return stable_id(
+        "audit",
+        {
+            "action": action,
+            "target_id": target_id,
+            "output_path": str(output_path),
+            "processor_version": PII_PROCESSOR_VERSION,
+        },
+    )
+
+
+def _append_pii_audit_event(
+    config: PipelineConfig,
+    action: str,
+    target_type: str,
+    target_id: str,
+    output_path: Path,
+    payload: dict,
+    details: dict,
+    existing_audit_ids: Set[str],
+) -> None:
+    audit_event_id = _audit_event_id(action, target_id, output_path)
+    if audit_event_id in existing_audit_ids:
+        return
+    append_jsonl(
+        config.jsonl_paths()["audit_events"],
+        AuditEventRecord(
+            audit_event_id=audit_event_id,
+            action=action,
+            actor_id="system",
+            target_type=target_type,
+            target_id=target_id,
+            source_id=payload.get("source_id"),
+            evidence_id=payload.get("evidence_id"),
+            claim_id=payload.get("claim_id"),
+            status="created",
+            details=details,
+        ),
+    )
+    existing_audit_ids.add(audit_event_id)
+
+
+def _audit_pii_findings(config: PipelineConfig, findings: Iterable[dict], output_path: Path) -> None:
+    existing_audit_ids = existing_values(config.jsonl_paths()["audit_events"], "audit_event_id")
+    for finding in findings:
+        _append_pii_audit_event(
+            config,
+            "detect_pii",
+            "pii_finding",
+            str(finding["finding_id"]),
+            output_path,
+            finding,
+            {
+                "artifact": finding["artifact"],
+                "record_id": finding["record_id"],
+                "field": finding["field"],
+                "pii_type": finding["pii_type"],
+                "match_hash": finding["match_hash"],
+                "char_start": finding["char_start"],
+                "char_end": finding["char_end"],
+                "output_path": str(output_path),
+                "processor_version": PII_PROCESSOR_VERSION,
+            },
+            existing_audit_ids,
+        )
+
+
+def _audit_pii_redactions(
+    config: PipelineConfig,
+    redactions: Iterable[dict],
+    output_path: Path,
+    manifest_path: Path,
+) -> None:
+    existing_audit_ids = existing_values(config.jsonl_paths()["audit_events"], "audit_event_id")
+    for redaction in redactions:
+        _append_pii_audit_event(
+            config,
+            "redact_pii",
+            "pii_redaction",
+            str(redaction["redaction_id"]),
+            output_path,
+            redaction,
+            {
+                "artifact": redaction["artifact"],
+                "record_id": redaction["record_id"],
+                "fields": redaction["fields"],
+                "replacement_count": redaction["replacement_count"],
+                "output_path": str(output_path),
+                "manifest_path": str(manifest_path),
+                "processor_version": PII_PROCESSOR_VERSION,
+            },
+            existing_audit_ids,
+        )
+
+
 def detect_pii(
     config: PipelineConfig,
     artifact: str = "all",
@@ -209,6 +306,7 @@ def detect_pii(
             seen_ids.add(finding["finding_id"])
             findings.append(finding)
     write_jsonl(output_path, findings)
+    _audit_pii_findings(config, findings, output_path)
     return PIIDetectionResult(output_path=output_path, finding_count=len(findings))
 
 
@@ -245,6 +343,7 @@ def redact_pii(
 
     write_jsonl(output_path, records)
     write_jsonl(manifest_path, redactions)
+    _audit_pii_redactions(config, redactions, output_path, manifest_path)
     return PIIRedactionResult(
         output_path=output_path,
         manifest_path=manifest_path,

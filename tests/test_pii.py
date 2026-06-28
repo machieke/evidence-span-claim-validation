@@ -55,11 +55,23 @@ def test_detect_pii_writes_redacted_findings_without_raw_matches(tmp_path: Path)
         assert jobs[0]["input_record_ids"] == ["artifact:chat_messages"]
         assert jobs[0]["metrics"] == {"findings": 2}
 
+        audit_path = Path("data/jsonl/audit_events.jsonl")
+        audit_text = audit_path.read_text(encoding="utf-8")
+        audit_events = [payload for _, payload in read_jsonl(audit_path)]
+        assert len(audit_events) == 2
+        assert {event["action"] for event in audit_events} == {"detect_pii"}
+        assert {event["target_type"] for event in audit_events} == {"pii_finding"}
+        assert {event["details"]["pii_type"] for event in audit_events} == {"email", "phone"}
+        assert "alice@example.com" not in audit_text
+        assert "415-555-1212" not in audit_text
+
         report = runner.invoke(app, ["report"])
         assert report.exit_code == 0, report.stdout
         report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
         assert "| jobs | 1 |" in report_text
+        assert "| audit_events | 2 |" in report_text
         assert "| detect_pii | 1 |" in report_text
+        assert "| detect_pii | 2 |" in report_text
         assert "| pii_findings | 2 |" in report_text
         assert "## PII Findings By Type" in report_text
         assert "| email | 1 |" in report_text
@@ -151,10 +163,22 @@ def test_redact_pii_writes_redacted_copy_without_mutating_source(tmp_path: Path)
             "replacements": 2,
         }
 
+        audit_path = Path("data/jsonl/audit_events.jsonl")
+        audit_text = audit_path.read_text(encoding="utf-8")
+        audit_events = [payload for _, payload in read_jsonl(audit_path)]
+        assert len(audit_events) == 1
+        assert audit_events[0]["action"] == "redact_pii"
+        assert audit_events[0]["target_type"] == "pii_redaction"
+        assert audit_events[0]["details"]["fields"] == ["text"]
+        assert audit_events[0]["details"]["replacement_count"] == 2
+        assert "alice@example.com" not in audit_text
+        assert "415-555-1212" not in audit_text
+
         report = runner.invoke(app, ["report"])
         assert report.exit_code == 0, report.stdout
         report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
         assert "| jobs | 1 |" in report_text
+        assert "| audit_events | 1 |" in report_text
         assert "| redact_pii | 1 |" in report_text
         assert "| pii_redactions | 1 |" in report_text
         assert "## PII Redactions By Artifact" in report_text
@@ -286,3 +310,9 @@ def test_trace_claim_includes_claim_pii_reports(tmp_path: Path):
             finding["finding_id"] for finding in findings
         ]
         assert trace_payload["pii_redactions"][0]["redaction_id"] == redactions[0]["redaction_id"]
+        assert [event["action"] for event in trace_payload["audit_events"]].count("detect_pii") == 2
+        assert [event["action"] for event in trace_payload["audit_events"]].count("redact_pii") == 1
+        assert {event["target_type"] for event in trace_payload["audit_events"]} == {
+            "pii_finding",
+            "pii_redaction",
+        }
