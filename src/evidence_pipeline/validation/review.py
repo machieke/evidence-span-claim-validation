@@ -6,7 +6,7 @@ import shlex
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from evidence_pipeline.config import PipelineConfig
 from evidence_pipeline.ids import stable_id
@@ -24,6 +24,51 @@ from evidence_pipeline.schemas.review import ReviewDecisionRecord, ReviewQueueRe
 REVIEW_DECISIONS = {"accept", "reject", "needs_review"}
 REVIEW_QUEUE_FORMATS = {"jsonl", "html"}
 REVIEW_QUEUE_VERSION = "review.queue.v1"
+
+ANCHOR_KEYS_BY_MODALITY = {
+    "chat": (
+        "conversation_id",
+        "message_id",
+        "sender_id",
+        "sender_role",
+        "timestamp",
+        "start_char",
+        "end_char",
+    ),
+    "pdf": (
+        "page",
+        "page_number",
+        "block_id",
+        "bbox",
+        "section_path",
+        "start_char",
+        "end_char",
+    ),
+    "audio": (
+        "utterance_id",
+        "speaker",
+        "speaker_label",
+        "start_seconds",
+        "end_seconds",
+        "start_ms",
+        "end_ms",
+        "asr_confidence",
+        "diarization_confidence",
+        "overlap",
+    ),
+    "image": (
+        "image_id",
+        "region_id",
+        "bbox",
+        "crop_path",
+        "mask_path",
+        "feature_cluster_id",
+        "member_region_ids",
+        "source_ids",
+        "cluster_size",
+        "cohesion_score",
+    ),
+}
 
 
 @dataclass
@@ -125,6 +170,34 @@ def _review_commands(claim_id: str, reason_codes: List[str]) -> Dict[str, str]:
     }
 
 
+def _add_anchor_value(anchor: Dict[str, Any], key: str, value: Any) -> None:
+    if value is None or value == "" or value == [] or value == {}:
+        return
+    anchor[key] = value
+
+
+def _evidence_anchor(claim: dict, evidence: Optional[dict], source: Optional[dict]) -> Dict[str, Any]:
+    source_modality = claim.get("source_modality")
+    provenance = evidence.get("provenance", {}) if evidence else {}
+    if not isinstance(provenance, dict):
+        provenance = {}
+
+    anchor: Dict[str, Any] = {}
+    for key, value in (
+        ("source_modality", source_modality),
+        ("source_id", claim.get("source_id")),
+        ("source_file", source.get("source_file") if source else None),
+        ("evidence_id", claim.get("evidence_id")),
+        ("evidence_type", evidence.get("evidence_type") if evidence else None),
+    ):
+        _add_anchor_value(anchor, key, value)
+
+    for key in ANCHOR_KEYS_BY_MODALITY.get(str(source_modality), ()):
+        _add_anchor_value(anchor, key, provenance.get(key))
+
+    return anchor
+
+
 def _review_queue_item(
     claim: dict,
     validation: Optional[dict],
@@ -160,6 +233,7 @@ def _review_queue_item(
             "provenance": evidence.get("provenance", {}) if evidence else {},
             "risk_flags": evidence_risk_flags,
         },
+        evidence_anchor=_evidence_anchor(claim, evidence, source),
         normalized_claims=normalized_claims,
         validation_status=validation.get("status") if validation else "unvalidated",
         reason_codes=validation_errors,
@@ -233,6 +307,29 @@ def _review_command_block(item: dict) -> str:
     return f'<pre class="review-commands">{html.escape(chr(10).join(lines))}</pre>'
 
 
+def _anchor_value(value: object) -> str:
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, sort_keys=True, ensure_ascii=False)
+    return _format_cell(value)
+
+
+def _evidence_anchor_block(item: dict) -> str:
+    anchor = item.get("evidence_anchor") or {}
+    if not isinstance(anchor, dict) or not anchor:
+        return ""
+    rows = []
+    for key, value in anchor.items():
+        rows.append(
+            "<dt>"
+            f"{html.escape(str(key))}"
+            "</dt>"
+            "<dd>"
+            f"{html.escape(_anchor_value(value))}"
+            "</dd>"
+        )
+    return '<dl class="evidence-anchor">' + "".join(rows) + "</dl>"
+
+
 def render_review_queue_html(queue_items: List[dict]) -> str:
     rows = []
     for item in queue_items:
@@ -240,6 +337,7 @@ def render_review_queue_html(queue_items: List[dict]) -> str:
         normalized = _format_json_cell(item.get("normalized_claims"))
         controls = _review_controls(item)
         command_block = _review_command_block(item)
+        anchor_block = _evidence_anchor_block(item)
         rows.append(
             "<tr>"
             f"<td>{html.escape(_format_cell(item.get('review_state')))}</td>"
@@ -248,6 +346,7 @@ def render_review_queue_html(queue_items: List[dict]) -> str:
             f"<td>{html.escape(_format_cell(item.get('validation_status')))}</td>"
             f"<td>{html.escape(_format_cell(item.get('reason_codes')))}</td>"
             f"<td>{html.escape(_format_cell(item.get('source_file')))}</td>"
+            f"<td>{anchor_block}</td>"
             f"<td>{html.escape(_format_cell(item.get('claim_id')))}</td>"
             f"<td>{html.escape(_format_cell(item.get('source_faithful_claim')))}</td>"
             f"<td>{html.escape(_format_cell(item.get('evidence_text')))}</td>"
@@ -268,6 +367,7 @@ def render_review_queue_html(queue_items: List[dict]) -> str:
         "<th>Validation</th>"
         "<th>Reasons</th>"
         "<th>Source</th>"
+        "<th>Anchor</th>"
         "<th>Claim ID</th>"
         "<th>Claim</th>"
         "<th>Evidence</th>"
@@ -286,7 +386,7 @@ def render_review_queue_html(queue_items: List[dict]) -> str:
             '<meta charset="utf-8">',
             "<title>Claim Review Queue</title>",
             "<style>",
-            "body{font-family:Arial,sans-serif;line-height:1.45;margin:2rem;max-width:1200px;}",
+            "body{font-family:Arial,sans-serif;line-height:1.45;margin:2rem;max-width:1400px;}",
             "table{border-collapse:collapse;margin:1rem 0;width:100%;}",
             "th,td{border:1px solid #d0d7de;padding:0.45rem 0.6rem;text-align:left;vertical-align:top;}",
             "th{background:#f6f8fa;}",
@@ -296,6 +396,9 @@ def render_review_queue_html(queue_items: List[dict]) -> str:
             ".action-buttons{display:flex;gap:0.35rem;flex-wrap:wrap;}",
             ".action-buttons button{font:inherit;padding:0.25rem 0.45rem;}",
             ".review-commands{max-width:32rem;}",
+            ".evidence-anchor{display:grid;grid-template-columns:max-content minmax(8rem,1fr);gap:0.15rem 0.5rem;margin:0;}",
+            ".evidence-anchor dt{font-weight:700;}",
+            ".evidence-anchor dd{margin:0;word-break:break-word;}",
             "</style>",
             "</head>",
             "<body>",

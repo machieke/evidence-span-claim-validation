@@ -253,6 +253,15 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
         assert items[0]["reason_codes"] == ["image_label_low_confidence"]
         assert items[0]["review_state"] == "unreviewed"
         assert items[0]["evidence"]["provenance"]["bbox"] == [0, 0, 16, 16]
+        assert items[0]["evidence_anchor"] == {
+            "source_modality": "image",
+            "source_id": "src_img_1",
+            "source_file": "image.png",
+            "evidence_id": "ev_img_1",
+            "evidence_type": "visual_region",
+            "region_id": "region_1",
+            "bbox": [0, 0, 16, 16],
+        }
         assert items[0]["normalized_claims"][0]["normalized_claim"]["predicate"] == "classified_as"
         assert (
             items[0]["review_commands"]["accept"]
@@ -283,6 +292,7 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
         trace_payload = json.loads(trace.stdout)
         assert trace_payload["review_queue"][0]["review_queue_id"] == items[0]["review_queue_id"]
         assert trace_payload["review_queue"][0]["normalized_claims"][0]["normalized_claim"]["object"] == "red"
+        assert trace_payload["review_queue"][0]["evidence_anchor"]["bbox"] == [0, 0, 16, 16]
         assert (
             trace_payload["review_queue"][0]["review_commands"]["accept"]
             == items[0]["review_commands"]["accept"]
@@ -311,6 +321,10 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
         assert "<h1>Claim Review Queue</h1>" in html_text
         assert "image_label_low_confidence" in html_text
         assert "classified_as" in html_text
+        assert "<th>Anchor</th>" in html_text
+        assert "region_id" in html_text
+        assert "region_1" in html_text
+        assert "[0, 0, 16, 16]" in html_text
         assert '<select name="decision"' in html_text
         assert '<input name="reason_code"' in html_text
         assert '<textarea name="notes"' in html_text
