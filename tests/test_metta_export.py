@@ -26,7 +26,12 @@ def test_export_metta_writes_normalized_claim_expressions(tmp_path: Path):
                     "subject": "speaker:alice",
                     "predicate": "asserts",
                     "object": "Hope had three masts.",
-                    "qualifiers": {"modality": "asserted", "truth_status": "speaker_asserted_unverified"},
+                    "qualifiers": {
+                        "modality": "asserted",
+                        "truth_status": "speaker_asserted_unverified",
+                        "attribution": {"type": "speaker", "agent": "alice"},
+                        "source_faithful_claim": "The speaker asserted: Hope had three masts.",
+                    },
                 },
             ),
         )
@@ -42,6 +47,10 @@ def test_export_metta_writes_normalized_claim_expressions(tmp_path: Path):
         assert '(claim "nclaim_1" "claim_1" "src_1" "ev_1" "speaker:alice" "asserts"' in output
         assert '"Hope had three masts."' in output
         assert '\\"truth_status\\":\\"speaker_asserted_unverified\\"' in output
+        assert '(claim-modality "nclaim_1" "asserted"' in output
+        assert '(claim-truth-status "nclaim_1" "speaker_asserted_unverified"' in output
+        assert '\\"type\\":\\"speaker\\"' in output
+        assert '(claim-source-faithful "nclaim_1" "The speaker asserted: Hope had three masts."' in output
 
         jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
         assert len(jobs) == 1

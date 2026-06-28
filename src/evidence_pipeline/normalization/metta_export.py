@@ -48,6 +48,24 @@ def _claim_expression(record: NormalizedClaimRecord) -> str:
     )
 
 
+def _claim_provenance_expressions(record: NormalizedClaimRecord) -> list[str]:
+    normalized = record.normalized_claim
+    raw_qualifiers = normalized.get("qualifiers") or {}
+    qualifiers = raw_qualifiers if isinstance(raw_qualifiers, dict) else {}
+    expressions = []
+    for relation, key in (
+        ("claim-modality", "modality"),
+        ("claim-truth-status", "truth_status"),
+        ("claim-attribution", "attribution"),
+        ("claim-source-faithful", "source_faithful_claim"),
+    ):
+        value = qualifiers.get(key)
+        if value is None:
+            continue
+        expressions.append(" ".join([f"({relation}", _atom(record.normalized_claim_id), _atom(value), ")"]))
+    return expressions
+
+
 def export_metta(config: PipelineConfig, output_path: Optional[Path] = None) -> MeTTaExportResult:
     if output_path is None:
         output_path = config.paths.reports_dir / "claims.metta"
@@ -55,10 +73,15 @@ def export_metta(config: PipelineConfig, output_path: Optional[Path] = None) -> 
     lines = [
         f"; schema: {METTA_EXPORT_VERSION}",
         "; (claim normalized_claim_id claim_id source_id evidence_id subject predicate object_json qualifiers_json)",
+        "; (claim-modality normalized_claim_id modality)",
+        "; (claim-truth-status normalized_claim_id truth_status)",
+        "; (claim-attribution normalized_claim_id attribution_json)",
+        "; (claim-source-faithful normalized_claim_id source_faithful_claim)",
     ]
     claim_count = 0
     for _, record in read_jsonl_records(paths["claims_normalized"], NormalizedClaimRecord):
         lines.append(_claim_expression(record))
+        lines.extend(_claim_provenance_expressions(record))
         claim_count += 1
 
     ensure_parent(output_path)
