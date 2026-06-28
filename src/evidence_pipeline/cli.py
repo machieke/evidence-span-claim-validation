@@ -1054,18 +1054,23 @@ def review_claim_command(
 
 @app.command("review-queue")
 def review_queue_command(
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Optional JSONL output path."),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Optional output path."),
     include_reviewed: bool = typer.Option(False, "--include-reviewed", help="Include already reviewed claims."),
+    format: str = typer.Option("jsonl", "--format", help="Review queue format: jsonl or html."),
     config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
 ) -> None:
     """Write reviewable claim packets from validation and evidence artifacts."""
     config = load_config(config_path)
     _init_paths(config)
-    result = write_review_queue(
-        config,
-        output_path=output,
-        include_reviewed=include_reviewed,
-    )
+    try:
+        result = write_review_queue(
+            config,
+            output_path=output,
+            include_reviewed=include_reviewed,
+            output_format=format,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc))
     typer.echo(f"{result.output_path} review_items={result.item_count}")
 
 

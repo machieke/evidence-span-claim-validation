@@ -181,6 +181,15 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
         assert items[0]["review_state"] == "unreviewed"
         assert items[0]["evidence"]["provenance"]["bbox"] == [0, 0, 16, 16]
 
+        html_queue = runner.invoke(app, ["review-queue", "--format", "html"])
+        assert html_queue.exit_code == 0, html_queue.stdout
+        assert "data/reports/review_queue.html review_items=1" in html_queue.stdout
+        html_text = Path("data/reports/review_queue.html").read_text(encoding="utf-8")
+        assert "<!doctype html>" in html_text
+        assert "<h1>Claim Review Queue</h1>" in html_text
+        assert "image_label_low_confidence" in html_text
+        assert "Model classifier_v1 classified region region_1 as red." in html_text
+
         needs_review = runner.invoke(
             app,
             [
@@ -231,3 +240,7 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
         assert len(reviewed_items) == 1
         assert reviewed_items[0]["review_state"] == "accept"
         assert reviewed_items[0]["latest_review"]["reason_codes"] == ["human_confirmed_label"]
+
+        invalid_format = runner.invoke(app, ["review-queue", "--format", "pdf"])
+        assert invalid_format.exit_code != 0
+        assert "review queue format must be jsonl or html" in invalid_format.stdout

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import html
+import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -7,12 +9,19 @@ from typing import Dict, List, Optional
 
 from evidence_pipeline.config import PipelineConfig
 from evidence_pipeline.ids import stable_id
-from evidence_pipeline.jsonl import append_jsonl, existing_values, read_jsonl, write_jsonl
+from evidence_pipeline.jsonl import (
+    append_jsonl,
+    ensure_parent,
+    existing_values,
+    read_jsonl,
+    write_jsonl,
+)
 from evidence_pipeline.schemas.audit import AuditEventRecord
 from evidence_pipeline.schemas.base import utc_now
 from evidence_pipeline.schemas.review import ReviewDecisionRecord
 
 REVIEW_DECISIONS = {"accept", "reject", "needs_review"}
+REVIEW_QUEUE_FORMATS = {"jsonl", "html"}
 
 
 @dataclass
@@ -124,6 +133,79 @@ def _review_queue_item(
     }
 
 
+def _default_review_queue_path(config: PipelineConfig, output_format: str) -> Path:
+    suffix = "html" if output_format == "html" else "jsonl"
+    return config.paths.reports_dir / f"review_queue.{suffix}"
+
+
+def _format_cell(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value)
+    return str(value)
+
+
+def render_review_queue_html(queue_items: List[dict]) -> str:
+    rows = []
+    for item in queue_items:
+        details = json.dumps(item, indent=2, sort_keys=True)
+        rows.append(
+            "<tr>"
+            f"<td>{html.escape(_format_cell(item.get('review_state')))}</td>"
+            f"<td>{html.escape(_format_cell(item.get('validation_status')))}</td>"
+            f"<td>{html.escape(_format_cell(item.get('reason_codes')))}</td>"
+            f"<td>{html.escape(_format_cell(item.get('source_file')))}</td>"
+            f"<td>{html.escape(_format_cell(item.get('claim_id')))}</td>"
+            f"<td>{html.escape(_format_cell(item.get('source_faithful_claim')))}</td>"
+            f"<td>{html.escape(_format_cell(item.get('evidence_text')))}</td>"
+            "<td><details><summary>JSON</summary><pre>"
+            f"{html.escape(details)}"
+            "</pre></details></td>"
+            "</tr>"
+        )
+    body = [
+        "<h1>Claim Review Queue</h1>",
+        f"<p>Items: {len(queue_items)}</p>",
+        "<table>",
+        "<thead><tr>"
+        "<th>Review</th>"
+        "<th>Validation</th>"
+        "<th>Reasons</th>"
+        "<th>Source</th>"
+        "<th>Claim ID</th>"
+        "<th>Claim</th>"
+        "<th>Evidence</th>"
+        "<th>Packet</th>"
+        "</tr></thead>",
+        "<tbody>",
+        *rows,
+        "</tbody></table>",
+    ]
+    return "\n".join(
+        [
+            "<!doctype html>",
+            '<html lang="en">',
+            "<head>",
+            '<meta charset="utf-8">',
+            "<title>Claim Review Queue</title>",
+            "<style>",
+            "body{font-family:Arial,sans-serif;line-height:1.45;margin:2rem;max-width:1200px;}",
+            "table{border-collapse:collapse;margin:1rem 0;width:100%;}",
+            "th,td{border:1px solid #d0d7de;padding:0.45rem 0.6rem;text-align:left;vertical-align:top;}",
+            "th{background:#f6f8fa;}",
+            "pre{white-space:pre-wrap;max-width:44rem;}",
+            "</style>",
+            "</head>",
+            "<body>",
+            *body,
+            "</body>",
+            "</html>",
+            "",
+        ]
+    )
+
+
 def _review_id(
     claim_id: str,
     reviewer_id: str,
@@ -147,9 +229,13 @@ def write_review_queue(
     config: PipelineConfig,
     output_path: Optional[Path] = None,
     include_reviewed: bool = False,
+    output_format: str = "jsonl",
 ) -> ReviewQueueResult:
+    normalized_format = output_format.strip().lower()
+    if normalized_format not in REVIEW_QUEUE_FORMATS:
+        raise ValueError("review queue format must be jsonl or html")
     if output_path is None:
-        output_path = config.paths.reports_dir / "review_queue.jsonl"
+        output_path = _default_review_queue_path(config, normalized_format)
     paths = config.jsonl_paths()
     validations = _validation_by_claim_id(config)
     latest_reviews = _latest_reviews(config)
@@ -175,7 +261,11 @@ def write_review_queue(
         source = source_by_id.get(str(claim.get("source_id")))
         queue_items.append(_review_queue_item(claim, validation, evidence, source, latest_review))
 
-    write_jsonl(output_path, queue_items)
+    if normalized_format == "html":
+        ensure_parent(output_path)
+        output_path.write_text(render_review_queue_html(queue_items), encoding="utf-8")
+    else:
+        write_jsonl(output_path, queue_items)
     return ReviewQueueResult(output_path=output_path, item_count=len(queue_items))
 
 
