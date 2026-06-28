@@ -47,6 +47,20 @@ def test_generic_stage_commands_dispatch_chat_pipeline(tmp_path: Path):
         assert len(list(read_jsonl(Path("data/jsonl/chunks.jsonl")))) == 1
         spans = [payload for _, payload in read_jsonl(Path("data/jsonl/spans.jsonl"))]
         assert [span["text"] for span in spans] == ["Hope had three masts."]
+        jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
+        assert [job["stage"] for job in jobs] == [
+            "ingest_chat",
+            "build_chat_evidence",
+            "chunk_chat",
+            "detect_chat_spans",
+        ]
+        assert [job["model_id"] for job in jobs] == [
+            "chat.ingest.v1",
+            "chat_evidence.builder.v1",
+            "chat_chunker.thread_window.v1",
+            "chat_rules_v1",
+        ]
+        assert jobs[2]["input_record_ids"][:2] == ["policy:max_tokens=1200", "policy:previous_messages=0"]
 
         invalid = runner.invoke(app, ["chunk", "--modality", "video"])
         assert invalid.exit_code != 0
@@ -93,3 +107,16 @@ def test_generic_stage_commands_dispatch_image_ocr_pipeline(tmp_path: Path):
         spans = [payload for _, payload in read_jsonl(Path("data/jsonl/spans.jsonl"))]
         assert len(chunks) == 1
         assert [span["text"] for span in spans] == ["Dock 4 is closed."]
+        jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
+        assert [job["stage"] for job in jobs] == [
+            "ingest_images",
+            "ingest_image_ocr",
+            "chunk_image_ocr",
+            "detect_image_ocr_spans",
+        ]
+        assert [job["model_id"] for job in jobs] == [
+            "image.ingest.v1",
+            "image_ocr.ingest.v1",
+            "image_ocr_chunker.single_evidence.v1",
+            "image_ocr_rules_v1",
+        ]

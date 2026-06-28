@@ -47,12 +47,29 @@ def test_run_chat_is_idempotent(tmp_path: Path):
         assert len(list(read_jsonl(Path("data/jsonl/claims.normalized.jsonl")))) == 2
         assert len(list(read_jsonl(Path("data/reports/claim_graph.jsonl")))) == 2
         jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
-        assert [job["stage"] for job in jobs] == ["extract_claims", "validate_claims", "normalize_claims"]
-        assert [job["model_id"] for job in jobs] == ["rules.v1", "deterministic.v1", "normalizer.v1"]
+        assert [job["stage"] for job in jobs] == [
+            "ingest_chat",
+            "build_chat_evidence",
+            "chunk_chat",
+            "detect_chat_spans",
+            "extract_claims",
+            "validate_claims",
+            "normalize_claims",
+        ]
+        assert [job["model_id"] for job in jobs] == [
+            "chat.ingest.v1",
+            "chat_evidence.builder.v1",
+            "chat_chunker.thread_window.v1",
+            "chat_rules_v1",
+            "rules.v1",
+            "deterministic.v1",
+            "normalizer.v1",
+        ]
         assert len({job["source_id"] for job in jobs}) == 1
+        assert jobs[2]["input_record_ids"][:2] == ["policy:max_tokens=1200", "policy:previous_messages=1"]
         assert Path("data/reports/extraction_summary.md").exists()
         report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
-        assert "| jobs | 3 |" in report_text
+        assert "| jobs | 7 |" in report_text
 
 
 def test_run_images_is_idempotent(tmp_path: Path):
@@ -83,13 +100,31 @@ def test_run_images_is_idempotent(tmp_path: Path):
         assert len(list(read_jsonl(Path("data/jsonl/claims.normalized.jsonl")))) == 1
         assert len(list(read_jsonl(Path("data/reports/claim_graph.jsonl")))) == 1
         jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
-        assert [job["stage"] for job in jobs] == ["extract_claims", "validate_claims", "normalize_claims"]
+        assert [job["stage"] for job in jobs] == [
+            "ingest_images",
+            "propose_image_regions",
+            "build_image_evidence",
+            "embed_image_regions",
+            "cluster_image_regions",
+            "build_image_cluster_evidence",
+            "extract_claims",
+            "validate_claims",
+            "normalize_claims",
+        ]
         assert [job["model_id"] for job in jobs] == [
+            "image.ingest.v1",
+            "image_region_proposal.grid.v1",
+            "image_region_evidence.builder.v1",
+            "color_rgb_mean_std_v1",
+            "connected_components_color_distance_v1+color_rgb_mean_std_v1",
+            "image_cluster_evidence.builder.v1",
             "image_region.rules.v1+image_cluster.rules.v1",
             "deterministic.v1",
             "normalizer.v1",
         ]
         assert len({job["source_id"] for job in jobs}) == 1
+        assert jobs[1]["metrics"] == {"regions_created": 1, "regions_skipped": 0}
+        assert jobs[4]["metrics"] == {"clustered_regions": 0, "clusters_created": 0, "clusters_skipped": 1}
         assert Path("data/reports/extraction_summary.md").exists()
         report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
-        assert "| jobs | 3 |" in report_text
+        assert "| jobs | 9 |" in report_text

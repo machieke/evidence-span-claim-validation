@@ -74,6 +74,21 @@ def test_image_region_clustering_emits_cluster_claims(tmp_path: Path):
         assert len(list(read_jsonl(Path("data/jsonl/claims.validated.jsonl")))) == 2
         assert len(list(read_jsonl(Path("data/jsonl/claims.normalized.jsonl")))) == 2
         assert len(list(read_jsonl(Path("data/reports/claim_graph.jsonl")))) == 2
+        jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
+        assert [job["stage"] for job in jobs] == [
+            "ingest_images",
+            "propose_image_regions",
+            "build_image_evidence",
+            "embed_image_regions",
+            "cluster_image_regions",
+            "build_image_cluster_evidence",
+            "extract_claims",
+            "validate_claims",
+            "normalize_claims",
+            "export_graph",
+        ]
+        assert jobs[4]["model_id"] == "connected_components_color_distance_v1+color_rgb_mean_std_v1"
+        assert jobs[4]["metrics"] == {"clustered_regions": 2, "clusters_created": 1, "clusters_skipped": 0}
 
         artifact_check = runner.invoke(app, ["validate-artifacts"])
         assert artifact_check.exit_code == 0, artifact_check.stdout

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import typer
 from pydantic import ValidationError
@@ -18,7 +18,7 @@ from evidence_pipeline.extraction.claim_extractor import (
     RULE_EXTRACTOR_VERSION,
     extract_claims_from_spans,
 )
-from evidence_pipeline.extraction.image_classifier import classify_image_regions
+from evidence_pipeline.extraction.image_classifier import COLOR_CLASSIFIER_MODEL, classify_image_regions
 from evidence_pipeline.ingest.chat import ingest_chat_export
 from evidence_pipeline.ingest.chat_evidence import build_chat_evidence
 from evidence_pipeline.ingest.audio import ingest_audio_transcript
@@ -48,6 +48,8 @@ from evidence_pipeline.reports.lineage import (
 from evidence_pipeline.reports.sqlite_export import export_sqlite
 from evidence_pipeline.schemas import SCHEMA_REGISTRY, EvidenceRecord, SourceModality, SourceRecord
 from evidence_pipeline.spans.image_region_clusterer import (
+    COLOR_CLUSTERING_METHOD,
+    COLOR_EMBEDDING_MODEL,
     build_image_region_embeddings,
     cluster_image_regions,
 )
@@ -90,6 +92,54 @@ CANONICAL_WORK_DIRS = [
 EVIDENCE_MODALITIES = {"all", "chat", "pdf", "audio", "image"}
 TEXT_CHUNK_MODALITIES = {"all", "chat", "pdf", "audio", "image"}
 TEXT_SPAN_MODALITIES = {"all", "chat", "pdf", "audio", "image"}
+
+SOURCE_REGISTRATION_VERSION = "source.registration.v1"
+INGEST_VERSIONS = {
+    "chat": "chat.ingest.v1",
+    "pdf": "pdf.ingest.v1",
+    "audio": "audio_transcript.ingest.v1",
+    "image": "image.ingest.v1",
+    "image_ocr": "image_ocr.ingest.v1",
+}
+EVIDENCE_BUILDER_VERSIONS = {
+    "chat": "chat_evidence.builder.v1",
+    "pdf": "pdf_evidence.builder.v1",
+    "audio": "audio_evidence.builder.v1",
+    "image_region": "image_region_evidence.builder.v1",
+    "image_cluster": "image_cluster_evidence.builder.v1",
+}
+CHUNKER_VERSIONS = {
+    "chat": "chat_chunker.thread_window.v1",
+    "pdf": "pdf_chunker.page_block_token_fallback.v1",
+    "audio": "audio_chunker.utterance_window.v1",
+    "image_ocr": "image_ocr_chunker.single_evidence.v1",
+}
+SPAN_DETECTOR_VERSIONS = {
+    "chat": "chat_rules_v1",
+    "pdf": "pdf_rules_v1",
+    "audio": "audio_rules_v1",
+    "image_ocr": "image_ocr_rules_v1",
+}
+IMAGE_REGION_PROPOSAL_VERSION = "image_region_proposal.grid.v1"
+EVIDENCE_STAGE_INPUTS = {
+    "build_chat_evidence": ("chat_messages", None, None),
+    "build_pdf_evidence": ("pdf_blocks", None, None),
+    "build_audio_evidence": ("audio_utterances", None, None),
+    "build_image_evidence": ("image_regions", None, None),
+    "build_image_cluster_evidence": ("image_feature_clusters", None, None),
+}
+CHUNK_STAGE_INPUTS = {
+    "chunk_chat": ("evidence", "chat", "message_span"),
+    "chunk_pdf": ("evidence", "pdf", "text_span"),
+    "chunk_audio": ("evidence", "audio", "utterance_span"),
+    "chunk_image_ocr": ("evidence", "image", "ocr_text_span"),
+}
+SPAN_STAGE_MODALITIES = {
+    "detect_chat_spans": "chat",
+    "detect_pdf_spans": "pdf",
+    "detect_audio_spans": "audio",
+    "detect_image_ocr_spans": "image",
+}
 
 
 def _parse_metadata(values: Optional[List[str]]) -> dict:
@@ -142,6 +192,326 @@ def _stage_input_ids(
     if source_id:
         return [source_id]
     return [default_id]
+
+
+def _policy_ids(**values: object) -> List[str]:
+    return [f"policy:{key}={value}" for key, value in sorted(values.items())]
+
+
+def _single_source_id(source_ids: List[str]) -> Optional[str]:
+    unique_source_ids = sorted(set(source_ids))
+    if len(unique_source_ids) == 1:
+        return unique_source_ids[0]
+    return None
+
+
+def _source_scope(
+    default_id: str,
+    source_id: Optional[str] = None,
+    source_ids: Optional[List[str]] = None,
+    extra_ids: Optional[List[str]] = None,
+) -> Tuple[Optional[str], List[str]]:
+    source_ids = sorted(set(source_ids or []))
+    effective_source_id = source_id or _single_source_id(source_ids)
+    if effective_source_id:
+        ids = [effective_source_id]
+    elif source_ids:
+        ids = source_ids
+    else:
+        ids = [default_id]
+    ids.extend(extra_ids or [])
+    return effective_source_id, ids
+
+
+def _jsonl_source_ids(
+    config: PipelineConfig,
+    artifact: str,
+    modality: Optional[str] = None,
+    evidence_type: Optional[str] = None,
+) -> List[str]:
+    source_ids = set()
+    for _, row in read_jsonl(config.jsonl_paths()[artifact]):
+        if modality is not None and row.get("source_modality") != modality:
+            continue
+        if evidence_type is not None and row.get("evidence_type") != evidence_type:
+            continue
+        source_id = row.get("source_id")
+        if source_id:
+            source_ids.add(str(source_id))
+        for value in row.get("source_ids", []) or []:
+            source_ids.add(str(value))
+    return sorted(source_ids)
+
+
+def _record_source_registration_job(
+    config: PipelineConfig,
+    source_id: str,
+    source_file: Path,
+    modality: SourceModality,
+    source_created: bool,
+) -> None:
+    record_job_result(
+        config,
+        stage="register_source",
+        source_id=source_id,
+        input_record_ids=[source_id],
+        model_id=SOURCE_REGISTRATION_VERSION,
+        metrics={"sources_created": int(source_created), "sources_skipped": int(not source_created)},
+        metadata={"source_file": str(source_file), "modality": modality},
+    )
+
+
+def _record_ingest_chat_job(config: PipelineConfig, input_path: Path, result) -> None:
+    record_job_result(
+        config,
+        stage="ingest_chat",
+        source_id=result.source_id,
+        input_record_ids=[result.source_id],
+        model_id=INGEST_VERSIONS["chat"],
+        metrics={
+            "sources_created": int(result.source_created),
+            "sources_skipped": int(not result.source_created),
+            "messages_created": result.messages_created,
+            "messages_skipped": result.messages_skipped,
+        },
+        metadata={"input_path": str(input_path), "modality": "chat"},
+    )
+
+
+def _record_ingest_pdf_job(config: PipelineConfig, input_path: Path, result) -> None:
+    record_job_result(
+        config,
+        stage="ingest_pdf",
+        source_id=result.source_id,
+        input_record_ids=[result.source_id],
+        model_id=INGEST_VERSIONS["pdf"],
+        metrics={
+            "sources_created": int(result.source_created),
+            "sources_skipped": int(not result.source_created),
+            "blocks_created": result.blocks_created,
+            "blocks_skipped": result.blocks_skipped,
+        },
+        metadata={"input_path": str(input_path), "modality": "pdf", "extractor": result.extractor},
+    )
+
+
+def _record_ingest_audio_job(config: PipelineConfig, input_path: Path, result) -> None:
+    record_job_result(
+        config,
+        stage="ingest_audio_transcript",
+        source_id=result.source_id,
+        input_record_ids=[result.source_id],
+        model_id=INGEST_VERSIONS["audio"],
+        metrics={
+            "sources_created": int(result.source_created),
+            "sources_skipped": int(not result.source_created),
+            "utterances_created": result.utterances_created,
+            "utterances_skipped": result.utterances_skipped,
+        },
+        metadata={"input_path": str(input_path), "modality": "audio"},
+    )
+
+
+def _record_ingest_images_job(config: PipelineConfig, input_path: Path, result) -> None:
+    source_ids = sorted(set(result.source_ids))
+    record_job_result(
+        config,
+        stage="ingest_images",
+        source_id=_single_source_id(source_ids),
+        input_record_ids=source_ids or [f"path:{input_path}"],
+        model_id=INGEST_VERSIONS["image"],
+        metrics={
+            "sources_created": result.sources_created,
+            "images_created": result.images_created,
+            "images_skipped": result.images_skipped,
+        },
+        metadata={"input_path": str(input_path), "modality": "image", "source_count": len(source_ids)},
+    )
+
+
+def _record_ingest_image_ocr_job(config: PipelineConfig, input_path: Path, result) -> None:
+    source_ids = sorted(set(result.source_ids))
+    record_job_result(
+        config,
+        stage="ingest_image_ocr",
+        source_id=_single_source_id(source_ids),
+        input_record_ids=source_ids or [f"path:{input_path}"],
+        model_id=INGEST_VERSIONS["image_ocr"],
+        metrics={"ocr_evidence_created": result.created, "ocr_evidence_skipped": result.skipped},
+        metadata={"input_path": str(input_path), "modality": "image"},
+    )
+
+
+def _record_evidence_job(config: PipelineConfig, stage: str, source_id: Optional[str], result, model_id: str) -> None:
+    artifact, modality, evidence_type = EVIDENCE_STAGE_INPUTS[stage]
+    effective_source_id, input_record_ids = _source_scope(
+        f"artifact:{stage}",
+        source_id=source_id,
+        source_ids=_jsonl_source_ids(config, artifact, modality=modality, evidence_type=evidence_type),
+    )
+    record_job_result(
+        config,
+        stage=stage,
+        source_id=effective_source_id,
+        input_record_ids=input_record_ids,
+        model_id=model_id,
+        metrics={"evidence_created": result.created, "evidence_skipped": result.skipped},
+    )
+
+
+def _record_chunk_job(
+    config: PipelineConfig,
+    stage: str,
+    source_id: Optional[str],
+    result,
+    model_id: str,
+    input_artifact: str,
+    policy: Optional[dict] = None,
+) -> None:
+    policy = policy or {}
+    artifact, modality, evidence_type = CHUNK_STAGE_INPUTS[stage]
+    effective_source_id, input_record_ids = _source_scope(
+        f"artifact:{input_artifact}",
+        source_id=source_id,
+        source_ids=_jsonl_source_ids(config, artifact, modality=modality, evidence_type=evidence_type),
+        extra_ids=_policy_ids(**policy),
+    )
+    record_job_result(
+        config,
+        stage=stage,
+        source_id=effective_source_id,
+        input_record_ids=input_record_ids,
+        model_id=model_id,
+        metrics={"chunks_created": result.created, "chunks_skipped": result.skipped},
+        metadata={"policy": policy},
+    )
+
+
+def _record_span_detection_job(
+    config: PipelineConfig,
+    stage: str,
+    source_id: Optional[str],
+    result,
+    model_id: str,
+    modality: str,
+) -> None:
+    effective_source_id, input_record_ids = _source_scope(
+        f"modality:{modality}",
+        source_id=source_id,
+        source_ids=_jsonl_source_ids(config, "chunks", modality=SPAN_STAGE_MODALITIES[stage]),
+    )
+    record_job_result(
+        config,
+        stage=stage,
+        source_id=effective_source_id,
+        input_record_ids=input_record_ids,
+        model_id=model_id,
+        metrics={"spans_created": result.created, "spans_skipped": result.skipped},
+        metadata={"modality": modality},
+    )
+
+
+def _record_image_region_proposal_job(
+    config: PipelineConfig,
+    source_id: Optional[str],
+    result,
+    patch_size: int,
+    stride: int,
+) -> None:
+    effective_source_id, input_record_ids = _source_scope(
+        "artifact:images",
+        source_id=source_id,
+        source_ids=_jsonl_source_ids(config, "images"),
+        extra_ids=_policy_ids(patch_size=patch_size, stride=stride),
+    )
+    record_job_result(
+        config,
+        stage="propose_image_regions",
+        source_id=effective_source_id,
+        input_record_ids=input_record_ids,
+        model_id=IMAGE_REGION_PROPOSAL_VERSION,
+        metrics={"regions_created": result.created, "regions_skipped": result.skipped},
+        metadata={"patch_size": patch_size, "stride": stride},
+    )
+
+
+def _record_image_embedding_job(config: PipelineConfig, source_id: Optional[str], result, embedding_model: str) -> None:
+    effective_source_id, input_record_ids = _source_scope(
+        "artifact:image_regions",
+        source_id=source_id,
+        source_ids=_jsonl_source_ids(config, "image_regions"),
+        extra_ids=_policy_ids(embedding_model=embedding_model),
+    )
+    record_job_result(
+        config,
+        stage="embed_image_regions",
+        source_id=effective_source_id,
+        input_record_ids=input_record_ids,
+        model_id=embedding_model,
+        metrics={"embeddings_created": result.created, "embeddings_skipped": result.skipped},
+        metadata={"embedding_model": embedding_model},
+    )
+
+
+def _record_image_classification_job(
+    config: PipelineConfig,
+    source_id: Optional[str],
+    result,
+    embedding_model: str,
+    classifier_model: str,
+) -> None:
+    effective_source_id, input_record_ids = _source_scope(
+        "artifact:image_region_embeddings",
+        source_id=source_id,
+        source_ids=_jsonl_source_ids(config, "image_region_embeddings"),
+        extra_ids=_policy_ids(embedding_model=embedding_model, classifier_model=classifier_model),
+    )
+    record_job_result(
+        config,
+        stage="classify_image_regions",
+        source_id=effective_source_id,
+        input_record_ids=input_record_ids,
+        model_id=classifier_model,
+        metrics={"classifications_created": result.created, "classifications_skipped": result.skipped},
+        metadata={"embedding_model": embedding_model, "classifier_model": classifier_model},
+    )
+
+
+def _record_image_clustering_job(
+    config: PipelineConfig,
+    source_id: Optional[str],
+    result,
+    embedding_model: str,
+    distance_threshold: float,
+    min_cluster_size: int,
+) -> None:
+    effective_source_id, input_record_ids = _source_scope(
+        "artifact:image_region_embeddings",
+        source_id=source_id,
+        source_ids=_jsonl_source_ids(config, "image_region_embeddings"),
+        extra_ids=_policy_ids(
+            embedding_model=embedding_model,
+            distance_threshold=distance_threshold,
+            min_cluster_size=min_cluster_size,
+        ),
+    )
+    record_job_result(
+        config,
+        stage="cluster_image_regions",
+        source_id=effective_source_id,
+        input_record_ids=input_record_ids,
+        model_id=f"{COLOR_CLUSTERING_METHOD}+{embedding_model}",
+        metrics={
+            "clusters_created": result.created,
+            "clusters_skipped": result.skipped,
+            "clustered_regions": result.clustered_regions,
+        },
+        metadata={
+            "embedding_model": embedding_model,
+            "distance_threshold": distance_threshold,
+            "min_cluster_size": min_cluster_size,
+        },
+    )
 
 
 def _extract_model_id(modality: str) -> str:
@@ -239,6 +609,7 @@ def register_source(
 
     existing = find_record(sources_path, "source_id", source_id)
     if existing:
+        _record_source_registration_job(config, source_id, source_file, modality, source_created=False)
         typer.echo(source_id)
         return
 
@@ -251,6 +622,7 @@ def register_source(
         metadata=_parse_metadata(metadata),
     )
     append_jsonl(sources_path, record)
+    _record_source_registration_job(config, source_id, source_file, modality, source_created=True)
     typer.echo(source_id)
 
 
@@ -269,6 +641,7 @@ def ingest_chat(
         result = ingest_chat_export(chat_export, config, metadata=_parse_metadata(metadata))
     except ValueError as exc:
         raise typer.BadParameter(str(exc))
+    _record_ingest_chat_job(config, chat_export, result)
     typer.echo(
         f"source_id={result.source_id} source_created={result.source_created} "
         f"messages_created={result.messages_created} messages_skipped={result.messages_skipped}"
@@ -284,6 +657,13 @@ def build_chat_evidence_command(
     config = load_config(config_path)
     _init_paths(config)
     result = build_chat_evidence(config, source_id=source_id)
+    _record_evidence_job(
+        config,
+        "build_chat_evidence",
+        source_id,
+        result,
+        EVIDENCE_BUILDER_VERSIONS["chat"],
+    )
     typer.echo(f"evidence_created={result.created} evidence_skipped={result.skipped}")
 
 
@@ -298,6 +678,15 @@ def chunk_chat_command(
     config = load_config(config_path)
     _init_paths(config)
     result = chunk_chat(config, source_id=source_id, previous_messages=previous_messages, max_tokens=max_tokens)
+    _record_chunk_job(
+        config,
+        "chunk_chat",
+        source_id,
+        result,
+        CHUNKER_VERSIONS["chat"],
+        "evidence",
+        {"previous_messages": previous_messages, "max_tokens": max_tokens},
+    )
     typer.echo(f"chunks_created={result.created} chunks_skipped={result.skipped}")
 
 
@@ -310,6 +699,14 @@ def detect_chat_spans_command(
     config = load_config(config_path)
     _init_paths(config)
     result = detect_chat_spans(config, source_id=source_id)
+    _record_span_detection_job(
+        config,
+        "detect_chat_spans",
+        source_id,
+        result,
+        SPAN_DETECTOR_VERSIONS["chat"],
+        "chat",
+    )
     typer.echo(f"spans_created={result.created} spans_skipped={result.skipped}")
 
 
@@ -328,6 +725,7 @@ def ingest_pdf_command(
         result = ingest_pdf(pdf_file, config, metadata=_parse_metadata(metadata))
     except RuntimeError as exc:
         raise typer.BadParameter(str(exc))
+    _record_ingest_pdf_job(config, pdf_file, result)
     typer.echo(
         f"source_id={result.source_id} source_created={result.source_created} "
         f"blocks_created={result.blocks_created} blocks_skipped={result.blocks_skipped} "
@@ -344,6 +742,13 @@ def build_pdf_evidence_command(
     config = load_config(config_path)
     _init_paths(config)
     result = build_pdf_evidence(config, source_id=source_id)
+    _record_evidence_job(
+        config,
+        "build_pdf_evidence",
+        source_id,
+        result,
+        EVIDENCE_BUILDER_VERSIONS["pdf"],
+    )
     typer.echo(f"evidence_created={result.created} evidence_skipped={result.skipped}")
 
 
@@ -358,6 +763,15 @@ def chunk_pdf_command(
     config = load_config(config_path)
     _init_paths(config)
     result = chunk_pdf(config, source_id=source_id, target_tokens=target_tokens, overlap_tokens=overlap_tokens)
+    _record_chunk_job(
+        config,
+        "chunk_pdf",
+        source_id,
+        result,
+        CHUNKER_VERSIONS["pdf"],
+        "evidence",
+        {"target_tokens": target_tokens, "overlap_tokens": overlap_tokens},
+    )
     typer.echo(f"chunks_created={result.created} chunks_skipped={result.skipped}")
 
 
@@ -370,6 +784,14 @@ def detect_pdf_spans_command(
     config = load_config(config_path)
     _init_paths(config)
     result = detect_pdf_spans(config, source_id=source_id)
+    _record_span_detection_job(
+        config,
+        "detect_pdf_spans",
+        source_id,
+        result,
+        SPAN_DETECTOR_VERSIONS["pdf"],
+        "pdf",
+    )
     typer.echo(f"spans_created={result.created} spans_skipped={result.skipped}")
 
 
@@ -388,6 +810,7 @@ def ingest_audio_transcript_command(
         result = ingest_audio_transcript(transcript_file, config, metadata=_parse_metadata(metadata))
     except ValueError as exc:
         raise typer.BadParameter(str(exc))
+    _record_ingest_audio_job(config, transcript_file, result)
     typer.echo(
         f"source_id={result.source_id} source_created={result.source_created} "
         f"utterances_created={result.utterances_created} utterances_skipped={result.utterances_skipped}"
@@ -403,6 +826,13 @@ def build_audio_evidence_command(
     config = load_config(config_path)
     _init_paths(config)
     result = build_audio_evidence(config, source_id=source_id)
+    _record_evidence_job(
+        config,
+        "build_audio_evidence",
+        source_id,
+        result,
+        EVIDENCE_BUILDER_VERSIONS["audio"],
+    )
     typer.echo(f"evidence_created={result.created} evidence_skipped={result.skipped}")
 
 
@@ -417,6 +847,15 @@ def chunk_audio_command(
     config = load_config(config_path)
     _init_paths(config)
     result = chunk_audio(config, source_id=source_id, previous_utterances=previous_utterances, max_tokens=max_tokens)
+    _record_chunk_job(
+        config,
+        "chunk_audio",
+        source_id,
+        result,
+        CHUNKER_VERSIONS["audio"],
+        "evidence",
+        {"previous_utterances": previous_utterances, "max_tokens": max_tokens},
+    )
     typer.echo(f"chunks_created={result.created} chunks_skipped={result.skipped}")
 
 
@@ -429,6 +868,14 @@ def detect_audio_spans_command(
     config = load_config(config_path)
     _init_paths(config)
     result = detect_audio_spans(config, source_id=source_id)
+    _record_span_detection_job(
+        config,
+        "detect_audio_spans",
+        source_id,
+        result,
+        SPAN_DETECTOR_VERSIONS["audio"],
+        "audio",
+    )
     typer.echo(f"spans_created={result.created} spans_skipped={result.skipped}")
 
 
@@ -444,6 +891,7 @@ def ingest_images_command(
     if not image_path.exists():
         raise typer.BadParameter(f"image path does not exist: {image_path}")
     result = ingest_images(image_path, config, metadata=_parse_metadata(metadata))
+    _record_ingest_images_job(config, image_path, result)
     typer.echo(
         f"sources_created={result.sources_created} images_created={result.images_created} "
         f"images_skipped={result.images_skipped}"
@@ -464,6 +912,7 @@ def ingest_image_ocr_command(
         result = ingest_image_ocr(ocr_file, config)
     except ValueError as exc:
         raise typer.BadParameter(str(exc))
+    _record_ingest_image_ocr_job(config, ocr_file, result)
     typer.echo(f"ocr_evidence_created={result.created} ocr_evidence_skipped={result.skipped}")
 
 
@@ -478,6 +927,7 @@ def propose_image_regions_command(
     config = load_config(config_path)
     _init_paths(config)
     result = propose_image_regions(config, source_id=source_id, patch_size=patch_size, stride=stride)
+    _record_image_region_proposal_job(config, source_id, result, patch_size, stride)
     typer.echo(f"regions_created={result.created} regions_skipped={result.skipped}")
 
 
@@ -490,6 +940,13 @@ def build_image_evidence_command(
     config = load_config(config_path)
     _init_paths(config)
     result = build_image_evidence(config, source_id=source_id)
+    _record_evidence_job(
+        config,
+        "build_image_evidence",
+        source_id,
+        result,
+        EVIDENCE_BUILDER_VERSIONS["image_region"],
+    )
     typer.echo(f"evidence_created={result.created} evidence_skipped={result.skipped}")
 
 
@@ -497,7 +954,7 @@ def build_image_evidence_command(
 def embed_image_regions_command(
     source_id: Optional[str] = typer.Option(None, "--source-id", help="Only embed regions for this source."),
     embedding_model: str = typer.Option(
-        "color_rgb_mean_std_v1",
+        COLOR_EMBEDDING_MODEL,
         "--embedding-model",
         help="Embedding model identifier.",
     ),
@@ -507,6 +964,7 @@ def embed_image_regions_command(
     config = load_config(config_path)
     _init_paths(config)
     result = build_image_region_embeddings(config, source_id=source_id, embedding_model=embedding_model)
+    _record_image_embedding_job(config, source_id, result, embedding_model)
     typer.echo(f"embeddings_created={result.created} embeddings_skipped={result.skipped}")
 
 
@@ -514,12 +972,12 @@ def embed_image_regions_command(
 def classify_image_regions_command(
     source_id: Optional[str] = typer.Option(None, "--source-id", help="Only classify regions for this source."),
     embedding_model: str = typer.Option(
-        "color_rgb_mean_std_v1",
+        COLOR_EMBEDDING_MODEL,
         "--embedding-model",
         help="Embedding model identifier.",
     ),
     classifier_model: str = typer.Option(
-        "dominant_color_classifier_v1",
+        COLOR_CLASSIFIER_MODEL,
         "--classifier-model",
         help="Classifier model identifier.",
     ),
@@ -534,6 +992,7 @@ def classify_image_regions_command(
         embedding_model=embedding_model,
         classifier_model=classifier_model,
     )
+    _record_image_classification_job(config, source_id, result, embedding_model, classifier_model)
     typer.echo(f"classifications_created={result.created} classifications_skipped={result.skipped}")
 
 
@@ -541,7 +1000,7 @@ def classify_image_regions_command(
 def cluster_image_regions_command(
     source_id: Optional[str] = typer.Option(None, "--source-id", help="Only cluster regions for this source."),
     embedding_model: str = typer.Option(
-        "color_rgb_mean_std_v1",
+        COLOR_EMBEDDING_MODEL,
         "--embedding-model",
         help="Embedding model identifier.",
     ),
@@ -564,6 +1023,7 @@ def cluster_image_regions_command(
         distance_threshold=distance_threshold,
         min_cluster_size=min_cluster_size,
     )
+    _record_image_clustering_job(config, source_id, result, embedding_model, distance_threshold, min_cluster_size)
     typer.echo(
         f"clusters_created={result.created} clusters_skipped={result.skipped} "
         f"clustered_regions={result.clustered_regions}"
@@ -579,6 +1039,13 @@ def build_image_cluster_evidence_command(
     config = load_config(config_path)
     _init_paths(config)
     result = build_image_cluster_evidence(config, source_id=source_id)
+    _record_evidence_job(
+        config,
+        "build_image_cluster_evidence",
+        source_id,
+        result,
+        EVIDENCE_BUILDER_VERSIONS["image_cluster"],
+    )
     typer.echo(f"evidence_created={result.created} evidence_skipped={result.skipped}")
 
 
@@ -591,6 +1058,14 @@ def chunk_image_ocr_command(
     config = load_config(config_path)
     _init_paths(config)
     result = chunk_image_ocr(config, source_id=source_id)
+    _record_chunk_job(
+        config,
+        "chunk_image_ocr",
+        source_id,
+        result,
+        CHUNKER_VERSIONS["image_ocr"],
+        "evidence",
+    )
     typer.echo(f"chunks_created={result.created} chunks_skipped={result.skipped}")
 
 
@@ -603,6 +1078,14 @@ def detect_image_ocr_spans_command(
     config = load_config(config_path)
     _init_paths(config)
     result = detect_image_ocr_spans(config, source_id=source_id)
+    _record_span_detection_job(
+        config,
+        "detect_image_ocr_spans",
+        source_id,
+        result,
+        SPAN_DETECTOR_VERSIONS["image_ocr"],
+        "image",
+    )
     typer.echo(f"spans_created={result.created} spans_skipped={result.skipped}")
 
 
@@ -619,16 +1102,51 @@ def build_evidence_command(
     outputs = []
     if modality in {"all", "chat"}:
         result = build_chat_evidence(config, source_id=source_id)
+        _record_evidence_job(
+            config,
+            "build_chat_evidence",
+            source_id,
+            result,
+            EVIDENCE_BUILDER_VERSIONS["chat"],
+        )
         outputs.append(f"chat_evidence_created={result.created} chat_evidence_skipped={result.skipped}")
     if modality in {"all", "pdf"}:
         result = build_pdf_evidence(config, source_id=source_id)
+        _record_evidence_job(
+            config,
+            "build_pdf_evidence",
+            source_id,
+            result,
+            EVIDENCE_BUILDER_VERSIONS["pdf"],
+        )
         outputs.append(f"pdf_evidence_created={result.created} pdf_evidence_skipped={result.skipped}")
     if modality in {"all", "audio"}:
         result = build_audio_evidence(config, source_id=source_id)
+        _record_evidence_job(
+            config,
+            "build_audio_evidence",
+            source_id,
+            result,
+            EVIDENCE_BUILDER_VERSIONS["audio"],
+        )
         outputs.append(f"audio_evidence_created={result.created} audio_evidence_skipped={result.skipped}")
     if modality in {"all", "image"}:
         region_result = build_image_evidence(config, source_id=source_id)
+        _record_evidence_job(
+            config,
+            "build_image_evidence",
+            source_id,
+            region_result,
+            EVIDENCE_BUILDER_VERSIONS["image_region"],
+        )
         cluster_result = build_image_cluster_evidence(config, source_id=source_id)
+        _record_evidence_job(
+            config,
+            "build_image_cluster_evidence",
+            source_id,
+            cluster_result,
+            EVIDENCE_BUILDER_VERSIONS["image_cluster"],
+        )
         outputs.append(
             f"image_evidence_created={region_result.created + cluster_result.created} "
             f"image_evidence_skipped={region_result.skipped + cluster_result.skipped}"
@@ -654,6 +1172,15 @@ def chunk_command(
     outputs = []
     if modality in {"all", "chat"}:
         result = chunk_chat(config, source_id=source_id, previous_messages=previous_messages, max_tokens=max_tokens)
+        _record_chunk_job(
+            config,
+            "chunk_chat",
+            source_id,
+            result,
+            CHUNKER_VERSIONS["chat"],
+            "evidence",
+            {"previous_messages": previous_messages, "max_tokens": max_tokens},
+        )
         outputs.append(f"chat_chunks_created={result.created} chat_chunks_skipped={result.skipped}")
     if modality in {"all", "pdf"}:
         result = chunk_pdf(
@@ -661,6 +1188,15 @@ def chunk_command(
             source_id=source_id,
             target_tokens=target_tokens,
             overlap_tokens=overlap_tokens,
+        )
+        _record_chunk_job(
+            config,
+            "chunk_pdf",
+            source_id,
+            result,
+            CHUNKER_VERSIONS["pdf"],
+            "evidence",
+            {"target_tokens": target_tokens, "overlap_tokens": overlap_tokens},
         )
         outputs.append(f"pdf_chunks_created={result.created} pdf_chunks_skipped={result.skipped}")
     if modality in {"all", "audio"}:
@@ -670,9 +1206,26 @@ def chunk_command(
             previous_utterances=previous_utterances,
             max_tokens=max_tokens,
         )
+        _record_chunk_job(
+            config,
+            "chunk_audio",
+            source_id,
+            result,
+            CHUNKER_VERSIONS["audio"],
+            "evidence",
+            {"previous_utterances": previous_utterances, "max_tokens": max_tokens},
+        )
         outputs.append(f"audio_chunks_created={result.created} audio_chunks_skipped={result.skipped}")
     if modality in {"all", "image"}:
         result = chunk_image_ocr(config, source_id=source_id)
+        _record_chunk_job(
+            config,
+            "chunk_image_ocr",
+            source_id,
+            result,
+            CHUNKER_VERSIONS["image_ocr"],
+            "evidence",
+        )
         outputs.append(f"image_ocr_chunks_created={result.created} image_ocr_chunks_skipped={result.skipped}")
     typer.echo(" ".join(outputs))
 
@@ -690,15 +1243,47 @@ def detect_spans_command(
     outputs = []
     if modality in {"all", "chat"}:
         result = detect_chat_spans(config, source_id=source_id)
+        _record_span_detection_job(
+            config,
+            "detect_chat_spans",
+            source_id,
+            result,
+            SPAN_DETECTOR_VERSIONS["chat"],
+            "chat",
+        )
         outputs.append(f"chat_spans_created={result.created} chat_spans_skipped={result.skipped}")
     if modality in {"all", "pdf"}:
         result = detect_pdf_spans(config, source_id=source_id)
+        _record_span_detection_job(
+            config,
+            "detect_pdf_spans",
+            source_id,
+            result,
+            SPAN_DETECTOR_VERSIONS["pdf"],
+            "pdf",
+        )
         outputs.append(f"pdf_spans_created={result.created} pdf_spans_skipped={result.skipped}")
     if modality in {"all", "audio"}:
         result = detect_audio_spans(config, source_id=source_id)
+        _record_span_detection_job(
+            config,
+            "detect_audio_spans",
+            source_id,
+            result,
+            SPAN_DETECTOR_VERSIONS["audio"],
+            "audio",
+        )
         outputs.append(f"audio_spans_created={result.created} audio_spans_skipped={result.skipped}")
     if modality in {"all", "image"}:
         result = detect_image_ocr_spans(config, source_id=source_id)
+        _record_span_detection_job(
+            config,
+            "detect_image_ocr_spans",
+            source_id,
+            result,
+            SPAN_DETECTOR_VERSIONS["image_ocr"],
+            "image",
+        )
         outputs.append(f"image_ocr_spans_created={result.created} image_ocr_spans_skipped={result.skipped}")
     typer.echo(" ".join(outputs))
 
@@ -715,9 +1300,34 @@ def run_chat_command(
     if not chat_export.exists() or not chat_export.is_file():
         raise typer.BadParameter(f"chat export does not exist: {chat_export}")
     ingest_result = ingest_chat_export(chat_export, config)
+    _record_ingest_chat_job(config, chat_export, ingest_result)
     evidence_result = build_chat_evidence(config, source_id=ingest_result.source_id)
+    _record_evidence_job(
+        config,
+        "build_chat_evidence",
+        ingest_result.source_id,
+        evidence_result,
+        EVIDENCE_BUILDER_VERSIONS["chat"],
+    )
     chunk_result = chunk_chat(config, source_id=ingest_result.source_id, previous_messages=previous_messages)
+    _record_chunk_job(
+        config,
+        "chunk_chat",
+        ingest_result.source_id,
+        chunk_result,
+        CHUNKER_VERSIONS["chat"],
+        "evidence",
+        {"previous_messages": previous_messages, "max_tokens": 1200},
+    )
     span_result = detect_chat_spans(config, source_id=ingest_result.source_id)
+    _record_span_detection_job(
+        config,
+        "detect_chat_spans",
+        ingest_result.source_id,
+        span_result,
+        SPAN_DETECTOR_VERSIONS["chat"],
+        "chat",
+    )
     extract_result = extract_claims_from_spans(config, modality="chat", source_id=ingest_result.source_id)
     validation_result = validate_raw_claims(config, source_id=ingest_result.source_id)
     normalization_result = normalize_claims(config, source_id=ingest_result.source_id)
@@ -750,9 +1360,34 @@ def run_pdf_command(
         ingest_result = ingest_pdf(pdf_file, config)
     except RuntimeError as exc:
         raise typer.BadParameter(str(exc))
+    _record_ingest_pdf_job(config, pdf_file, ingest_result)
     evidence_result = build_pdf_evidence(config, source_id=ingest_result.source_id)
+    _record_evidence_job(
+        config,
+        "build_pdf_evidence",
+        ingest_result.source_id,
+        evidence_result,
+        EVIDENCE_BUILDER_VERSIONS["pdf"],
+    )
     chunk_result = chunk_pdf(config, source_id=ingest_result.source_id, target_tokens=target_tokens)
+    _record_chunk_job(
+        config,
+        "chunk_pdf",
+        ingest_result.source_id,
+        chunk_result,
+        CHUNKER_VERSIONS["pdf"],
+        "evidence",
+        {"target_tokens": target_tokens, "overlap_tokens": 150},
+    )
     span_result = detect_pdf_spans(config, source_id=ingest_result.source_id)
+    _record_span_detection_job(
+        config,
+        "detect_pdf_spans",
+        ingest_result.source_id,
+        span_result,
+        SPAN_DETECTOR_VERSIONS["pdf"],
+        "pdf",
+    )
     extract_result = extract_claims_from_spans(config, modality="pdf", source_id=ingest_result.source_id)
     validation_result = validate_raw_claims(config, source_id=ingest_result.source_id)
     normalization_result = normalize_claims(config, source_id=ingest_result.source_id)
@@ -782,9 +1417,34 @@ def run_audio_transcript_command(
     if not transcript_file.exists() or not transcript_file.is_file():
         raise typer.BadParameter(f"transcript file does not exist: {transcript_file}")
     ingest_result = ingest_audio_transcript(transcript_file, config)
+    _record_ingest_audio_job(config, transcript_file, ingest_result)
     evidence_result = build_audio_evidence(config, source_id=ingest_result.source_id)
+    _record_evidence_job(
+        config,
+        "build_audio_evidence",
+        ingest_result.source_id,
+        evidence_result,
+        EVIDENCE_BUILDER_VERSIONS["audio"],
+    )
     chunk_result = chunk_audio(config, source_id=ingest_result.source_id, previous_utterances=previous_utterances)
+    _record_chunk_job(
+        config,
+        "chunk_audio",
+        ingest_result.source_id,
+        chunk_result,
+        CHUNKER_VERSIONS["audio"],
+        "evidence",
+        {"previous_utterances": previous_utterances, "max_tokens": 1200},
+    )
     span_result = detect_audio_spans(config, source_id=ingest_result.source_id)
+    _record_span_detection_job(
+        config,
+        "detect_audio_spans",
+        ingest_result.source_id,
+        span_result,
+        SPAN_DETECTOR_VERSIONS["audio"],
+        "audio",
+    )
     extract_result = extract_claims_from_spans(config, modality="audio", source_id=ingest_result.source_id)
     validation_result = validate_raw_claims(config, source_id=ingest_result.source_id)
     normalization_result = normalize_claims(config, source_id=ingest_result.source_id)
@@ -822,6 +1482,7 @@ def run_images_command(
     if not image_path.exists():
         raise typer.BadParameter(f"image path does not exist: {image_path}")
     ingest_result = ingest_images(image_path, config)
+    _record_ingest_images_job(config, image_path, ingest_result)
     regions_created = 0
     evidence_created = 0
     embeddings_created = 0
@@ -831,15 +1492,39 @@ def run_images_command(
     claims_normalized = 0
     for source_id in ingest_result.source_ids:
         region_result = propose_image_regions(config, source_id=source_id, patch_size=patch_size, stride=stride)
+        _record_image_region_proposal_job(config, source_id, region_result, patch_size, stride)
         evidence_result = build_image_evidence(config, source_id=source_id)
+        _record_evidence_job(
+            config,
+            "build_image_evidence",
+            source_id,
+            evidence_result,
+            EVIDENCE_BUILDER_VERSIONS["image_region"],
+        )
         embedding_result = build_image_region_embeddings(config, source_id=source_id)
+        _record_image_embedding_job(config, source_id, embedding_result, COLOR_EMBEDDING_MODEL)
         cluster_result = cluster_image_regions(
             config,
             source_id=source_id,
             distance_threshold=distance_threshold,
             min_cluster_size=min_cluster_size,
         )
+        _record_image_clustering_job(
+            config,
+            source_id,
+            cluster_result,
+            COLOR_EMBEDDING_MODEL,
+            distance_threshold,
+            min_cluster_size,
+        )
         cluster_evidence_result = build_image_cluster_evidence(config, source_id=source_id)
+        _record_evidence_job(
+            config,
+            "build_image_cluster_evidence",
+            source_id,
+            cluster_evidence_result,
+            EVIDENCE_BUILDER_VERSIONS["image_cluster"],
+        )
         extract_result = extract_claims_from_spans(config, modality="image", source_id=source_id)
         validation_result = validate_raw_claims(config, source_id=source_id)
         normalization_result = normalize_claims(config, source_id=source_id)

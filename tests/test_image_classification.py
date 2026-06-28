@@ -47,6 +47,19 @@ def test_image_region_color_classification_is_idempotent(tmp_path: Path):
         assert len(list(read_jsonl(Path("data/jsonl/claims.validated.jsonl")))) == 1
         assert len(list(read_jsonl(Path("data/jsonl/claims.normalized.jsonl")))) == 1
         assert len(list(read_jsonl(Path("data/reports/claim_graph.jsonl")))) == 1
+        jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
+        assert [job["stage"] for job in jobs] == [
+            "ingest_images",
+            "propose_image_regions",
+            "build_image_evidence",
+            "embed_image_regions",
+            "classify_image_regions",
+            "validate_claims",
+            "normalize_claims",
+            "export_graph",
+        ]
+        assert jobs[4]["model_id"] == "dominant_color_classifier_v1"
+        assert jobs[4]["metrics"] == {"classifications_created": 1, "classifications_skipped": 0}
 
         artifact_check = runner.invoke(app, ["validate-artifacts"])
         assert artifact_check.exit_code == 0, artifact_check.stdout

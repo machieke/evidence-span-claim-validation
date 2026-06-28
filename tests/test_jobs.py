@@ -13,6 +13,24 @@ from evidence_pipeline.schemas.spans import SpanRecord
 runner = CliRunner()
 
 
+def test_register_source_writes_idempotent_job_record(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        Path("source.txt").write_text("Hope had three masts.", encoding="utf-8")
+
+        first = runner.invoke(app, ["register-source", "source.txt", "--modality", "chat"])
+        second = runner.invoke(app, ["register-source", "source.txt", "--modality", "chat"])
+
+        assert first.exit_code == 0, first.stdout
+        assert second.exit_code == 0, second.stdout
+        assert first.stdout == second.stdout
+        jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
+        assert len(jobs) == 1
+        assert jobs[0]["stage"] == "register_source"
+        assert jobs[0]["model_id"] == "source.registration.v1"
+        assert jobs[0]["input_record_ids"] == [first.stdout.strip()]
+        assert jobs[0]["metrics"] == {"sources_created": 1, "sources_skipped": 0}
+
+
 def test_core_stage_commands_write_idempotent_job_records(tmp_path: Path):
     with runner.isolated_filesystem(temp_dir=tmp_path):
         init = runner.invoke(app, ["init"])

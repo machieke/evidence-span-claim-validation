@@ -18,6 +18,7 @@ LOW_OCR_CONFIDENCE_THRESHOLD = 0.75
 class ImageOCRIngestResult:
     created: int
     skipped: int
+    source_ids: List[str]
 
 
 def _ocr_items(path: Path) -> Iterable[Dict[str, Any]]:
@@ -105,12 +106,14 @@ def ingest_image_ocr(ocr_path: Path, config: PipelineConfig) -> ImageOCRIngestRe
     existing_ids = existing_values(paths["evidence"], "evidence_id")
     created = 0
     skipped = 0
+    source_ids = set()
 
     for item in _ocr_items(ocr_path):
         image_key = item.get("image_id") or item.get("source_id") or item.get("image_file")
         if image_key is None or str(image_key) not in image_by_key:
             raise ValueError(f"OCR item references unknown image: {image_key}")
         record = _evidence_record(item, image_by_key[str(image_key)])
+        source_ids.add(record.source_id)
         if record.evidence_id in existing_ids:
             skipped += 1
             continue
@@ -118,4 +121,4 @@ def ingest_image_ocr(ocr_path: Path, config: PipelineConfig) -> ImageOCRIngestRe
         existing_ids.add(record.evidence_id)
         created += 1
 
-    return ImageOCRIngestResult(created=created, skipped=skipped)
+    return ImageOCRIngestResult(created=created, skipped=skipped, source_ids=sorted(source_ids))

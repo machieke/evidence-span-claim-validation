@@ -95,6 +95,10 @@ def test_chat_pipeline_is_idempotent(tmp_path: Path):
         assert trace_payload["evidence"]["evidence_id"] == raw_claims[0]["evidence_id"]
         assert trace_payload["source"]["source_modality"] == "chat"
         assert [job["stage"] for job in trace_payload["jobs"]] == [
+            "ingest_chat",
+            "build_chat_evidence",
+            "chunk_chat",
+            "detect_chat_spans",
             "extract_claims",
             "validate_claims",
             "normalize_claims",
@@ -118,6 +122,10 @@ def test_chat_pipeline_is_idempotent(tmp_path: Path):
         assert all(edge["attribution"]["type"] == "speaker" for edge in edges)
         jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
         assert [job["stage"] for job in jobs] == [
+            "ingest_chat",
+            "build_chat_evidence",
+            "chunk_chat",
+            "detect_chat_spans",
             "extract_claims",
             "validate_claims",
             "normalize_claims",
