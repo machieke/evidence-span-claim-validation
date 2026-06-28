@@ -195,6 +195,10 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
         assert "## Review Queue Reasons" in report_text
         assert "| image_label_low_confidence | 1 |" in report_text
 
+        artifact_check = runner.invoke(app, ["validate-artifacts", "--include-reports"])
+        assert artifact_check.exit_code == 0, artifact_check.stdout
+        assert "data/reports/review_queue.jsonl: checked 1 records" in artifact_check.stdout
+
         html_queue = runner.invoke(app, ["review-queue", "--format", "html"])
         assert html_queue.exit_code == 0, html_queue.stdout
         assert "data/reports/review_queue.html review_items=1" in html_queue.stdout

@@ -1205,6 +1205,11 @@ def validate_jsonl(
 
 @app.command("validate-artifacts")
 def validate_artifacts(
+    include_reports: bool = typer.Option(
+        False,
+        "--include-reports",
+        help="Also validate known report JSONLs with registered schemas.",
+    ),
     config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
 ) -> None:
     """Validate known JSONL artifacts that exist in the configured data directory."""
@@ -1231,11 +1236,13 @@ def validate_artifacts(
         "errors": "error",
         "quarantine": "quarantine",
     }
+    report_schema_by_key = {
+        "review_queue": "review_queue",
+    }
     failures = 0
-    for key, path in config.jsonl_paths().items():
-        schema = schema_by_key.get(key)
-        if schema is None or not path.exists():
-            continue
+
+    def validate_path(path: Path, schema: str) -> None:
+        nonlocal failures
         model = SCHEMA_REGISTRY[schema]
         count = 0
         try:
@@ -1250,6 +1257,19 @@ def validate_artifacts(
             typer.echo(str(exc), err=True)
             failures += 1
         typer.echo(f"{path}: checked {count} records")
+
+    for key, path in config.jsonl_paths().items():
+        schema = schema_by_key.get(key)
+        if schema is None or not path.exists():
+            continue
+        validate_path(path, schema)
+
+    if include_reports:
+        for key, schema in report_schema_by_key.items():
+            path = config.paths.reports_dir / f"{key}.jsonl"
+            if not path.exists():
+                continue
+            validate_path(path, schema)
     if failures:
         raise typer.Exit(code=1)
 
