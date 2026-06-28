@@ -165,6 +165,11 @@ def test_apply_repairs_creates_audited_repaired_raw_claim(tmp_path: Path):
         assert jobs[1]["metrics"] == {"repairs_applied": 1, "repairs_failed": 0, "repairs_skipped": 0}
         assert repaired["claim_id"] in jobs[1]["input_record_ids"]
 
+        report = runner.invoke(app, ["report"])
+        assert report.exit_code == 0, report.stdout
+        report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
+        assert "| Repair application success rate | 100.0% |" in report_text
+
         trace = runner.invoke(app, ["trace-claim", repaired["claim_id"]])
         assert trace.exit_code == 0, trace.stdout
         trace_payload = json.loads(trace.stdout)

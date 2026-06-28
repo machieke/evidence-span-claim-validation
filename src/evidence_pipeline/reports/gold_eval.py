@@ -76,6 +76,66 @@ def _rate(numerator: int, denominator: int) -> Optional[float]:
     return numerator / denominator
 
 
+def _validation_summary(row: dict) -> Optional[dict]:
+    metadata = row.get("metadata") or {}
+    if not isinstance(metadata, dict):
+        return None
+    validation = metadata.get("validation") or {}
+    if not isinstance(validation, dict):
+        return None
+    return validation
+
+
+def _validation_bool_rate(rows: Iterable[dict], field_name: str) -> Optional[float]:
+    total = 0
+    passed = 0
+    for row in rows:
+        validation = _validation_summary(row)
+        if validation is None:
+            continue
+        value = validation.get(field_name)
+        if not isinstance(value, bool):
+            continue
+        total += 1
+        if value:
+            passed += 1
+    return _rate(passed, total)
+
+
+def _unsupported_entity_rate(rows: Iterable[dict]) -> Optional[float]:
+    total = 0
+    flagged = 0
+    for row in rows:
+        validation = _validation_summary(row)
+        if validation is None:
+            continue
+        introduced_entities = validation.get("introduced_entities")
+        if not isinstance(introduced_entities, list):
+            continue
+        total += 1
+        if introduced_entities:
+            flagged += 1
+    return _rate(flagged, total)
+
+
+def _validation_quarantine_rate(rows: Iterable[dict]) -> Optional[float]:
+    records = list(rows)
+    return _rate(sum(1 for row in records if row.get("status") == "quarantined"), len(records))
+
+
+def _validation_quality_metrics(config: PipelineConfig) -> Dict[str, Optional[float]]:
+    validations = [payload for _, payload in read_jsonl(config.jsonl_paths()["validations"])]
+    return {
+        "evidence_exact_match_rate": _validation_bool_rate(validations, "evidence_exact_match"),
+        "attribution_preservation_rate": _validation_bool_rate(validations, "attribution_preserved"),
+        "uncertainty_preservation_rate": _validation_bool_rate(validations, "uncertainty_preserved"),
+        "negation_preservation_rate": _validation_bool_rate(validations, "negation_preserved"),
+        "quantity_preservation_rate": _validation_bool_rate(validations, "quantities_preserved"),
+        "unsupported_entity_rate": _unsupported_entity_rate(validations),
+        "quarantine_rate": _validation_quarantine_rate(validations),
+    }
+
+
 def evaluate_gold(config: PipelineConfig, gold_path: Path) -> Dict[str, object]:
     gold_claims = _load_gold_claims(gold_path)
     expected_accepted = _gold_keys(gold_claims, "accepted")
@@ -90,7 +150,7 @@ def evaluate_gold(config: PipelineConfig, gold_path: Path) -> Dict[str, object]:
     quarantine_false_positives = quarantined - expected_quarantined
     quarantine_missing = expected_quarantined - quarantined
 
-    return {
+    metrics = {
         "gold_claims": len(gold_claims),
         "expected_accepted": len(expected_accepted),
         "produced_accepted": len(accepted),
@@ -117,6 +177,8 @@ def evaluate_gold(config: PipelineConfig, gold_path: Path) -> Dict[str, object]:
             key=str,
         ),
     }
+    metrics.update(_validation_quality_metrics(config))
+    return metrics
 
 
 def _format_rate(value: object) -> str:
@@ -150,6 +212,13 @@ def _render_markdown(metrics: Dict[str, object], gold_path: Path) -> str:
         f"| Quarantine recall | {_format_rate(metrics['quarantine_recall'])} |",
         f"| Quarantine false positives | {metrics['quarantine_false_positives']} |",
         f"| Quarantine missing | {metrics['quarantine_missing']} |",
+        f"| Evidence exact-match rate | {_format_rate(metrics['evidence_exact_match_rate'])} |",
+        f"| Attribution preservation rate | {_format_rate(metrics['attribution_preservation_rate'])} |",
+        f"| Uncertainty preservation rate | {_format_rate(metrics['uncertainty_preservation_rate'])} |",
+        f"| Negation preservation rate | {_format_rate(metrics['negation_preservation_rate'])} |",
+        f"| Quantity preservation rate | {_format_rate(metrics['quantity_preservation_rate'])} |",
+        f"| Unsupported entity rate | {_format_rate(metrics['unsupported_entity_rate'])} |",
+        f"| Validation quarantine rate | {_format_rate(metrics['quarantine_rate'])} |",
         "",
     ]
     for title, key in (

@@ -74,6 +74,7 @@ def test_dedupe_claims_groups_duplicate_normalized_claims(tmp_path: Path):
         assert "| dedupe_claims | 1 |" in report_text
         assert "## Duplicate Groups By Level" in report_text
         assert "| same_source_distinct_evidence | 1 |" in report_text
+        assert "| Duplicate normalized claim rate | 66.7% |" in report_text
 
         artifact_check = runner.invoke(app, ["validate-artifacts", "--include-reports"])
         assert artifact_check.exit_code == 0, artifact_check.stdout

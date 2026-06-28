@@ -7,7 +7,7 @@ from typer.testing import CliRunner
 from evidence_pipeline.cli import app
 from evidence_pipeline.jsonl import append_jsonl, read_jsonl
 from evidence_pipeline.schemas.claims import ClaimValidationSummary, ValidatedClaimRecord
-from evidence_pipeline.schemas.validation import QuarantineRecord
+from evidence_pipeline.schemas.validation import QuarantineRecord, ValidationRecord
 
 
 runner = CliRunner()
@@ -18,6 +18,23 @@ def test_gold_eval_reports_quarantine_precision_and_recall(tmp_path: Path):
         init = runner.invoke(app, ["init"])
         assert init.exit_code == 0
 
+        accepted_validation = ClaimValidationSummary(
+            deterministic_valid=True,
+            evidence_exact_match=True,
+            negation_preserved=True,
+            uncertainty_preserved=True,
+            attribution_preserved=True,
+            quantities_preserved=True,
+        )
+        quarantined_validation = ClaimValidationSummary(
+            deterministic_valid=False,
+            evidence_exact_match=False,
+            negation_preserved=True,
+            uncertainty_preserved=True,
+            attribution_preserved=False,
+            quantities_preserved=True,
+            introduced_entities=["Boston"],
+        )
         append_jsonl(
             Path("data/jsonl/claims.validated.jsonl"),
             ValidatedClaimRecord(
@@ -30,7 +47,31 @@ def test_gold_eval_reports_quarantine_precision_and_recall(tmp_path: Path):
                 modality="asserted",
                 truth_status="speaker_asserted_unverified",
                 support_status="accepted_extracted",
-                validation=ClaimValidationSummary(deterministic_valid=True),
+                validation=accepted_validation,
+            ),
+        )
+        append_jsonl(
+            Path("data/jsonl/validations.jsonl"),
+            ValidationRecord(
+                validation_id="val_accepted",
+                claim_id="claim_accepted",
+                record_id="claim_accepted",
+                stage="validate_claims",
+                status="accepted_extracted",
+                metadata={"validation": accepted_validation.model_dump(mode="json")},
+            ),
+        )
+        append_jsonl(
+            Path("data/jsonl/validations.jsonl"),
+            ValidationRecord(
+                validation_id="val_quarantined",
+                claim_id="claim_quarantined_match",
+                record_id="claim_quarantined_match",
+                stage="validate_claims",
+                status="quarantined",
+                errors=["unsupported_entities_introduced"],
+                warnings=["unsupported_entities_introduced"],
+                metadata={"validation": quarantined_validation.model_dump(mode="json")},
             ),
         )
         append_jsonl(
@@ -92,6 +133,10 @@ def test_gold_eval_reports_quarantine_precision_and_recall(tmp_path: Path):
         assert "| Quarantine recall | 50.0% |" in report
         assert "| Quarantine false positives | 1 |" in report
         assert "| Quarantine missing | 1 |" in report
+        assert "| Evidence exact-match rate | 50.0% |" in report
+        assert "| Attribution preservation rate | 50.0% |" in report
+        assert "| Unsupported entity rate | 50.0% |" in report
+        assert "| Validation quarantine rate | 50.0% |" in report
         assert "ev_missing_quarantine" in report
         assert "ev_extra" in report
 
@@ -103,6 +148,13 @@ def test_gold_eval_reports_quarantine_precision_and_recall(tmp_path: Path):
         assert metrics[0]["accepted_precision"] == 1.0
         assert metrics[0]["quarantine_precision"] == 0.5
         assert metrics[0]["quarantine_recall"] == 0.5
+        assert metrics[0]["evidence_exact_match_rate"] == 0.5
+        assert metrics[0]["attribution_preservation_rate"] == 0.5
+        assert metrics[0]["uncertainty_preservation_rate"] == 1.0
+        assert metrics[0]["negation_preservation_rate"] == 1.0
+        assert metrics[0]["quantity_preservation_rate"] == 1.0
+        assert metrics[0]["unsupported_entity_rate"] == 0.5
+        assert metrics[0]["quarantine_rate"] == 0.5
 
         jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
         assert len(jobs) == 1
@@ -111,6 +163,7 @@ def test_gold_eval_reports_quarantine_precision_and_recall(tmp_path: Path):
         assert jobs[0]["input_record_ids"] == ["claims_validated", "gold:gold.json", "quarantine"]
         assert jobs[0]["metrics"]["gold_claims"] == 3
         assert jobs[0]["metrics"]["quarantine_recall"] == 0.5
+        assert jobs[0]["metrics"]["evidence_exact_match_rate"] == 0.5
 
         summary = runner.invoke(app, ["report"])
         assert summary.exit_code == 0, summary.stdout
@@ -121,6 +174,10 @@ def test_gold_eval_reports_quarantine_precision_and_recall(tmp_path: Path):
         assert "| Gold accepted precision | 100.0% |" in summary_text
         assert "| Gold quarantine precision | 50.0% |" in summary_text
         assert "| Gold quarantine recall | 50.0% |" in summary_text
+        assert "| Gold evidence exact-match rate | 50.0% |" in summary_text
+        assert "| Gold attribution preservation rate | 50.0% |" in summary_text
+        assert "| Gold unsupported entity rate | 50.0% |" in summary_text
+        assert "| Gold validation quarantine rate | 50.0% |" in summary_text
 
         export = runner.invoke(app, ["export-sqlite"])
         assert export.exit_code == 0, export.stdout
@@ -139,6 +196,7 @@ def test_gold_eval_reports_quarantine_precision_and_recall(tmp_path: Path):
         assert gold_eval_count == 1
         assert artifact_count == 1
         assert exported_payload["quarantine_recall"] == 0.5
+        assert exported_payload["unsupported_entity_rate"] == 0.5
 
         validation = runner.invoke(app, ["validate-artifacts", "--include-reports"])
         assert validation.exit_code == 0, validation.stdout

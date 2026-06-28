@@ -226,6 +226,89 @@ def _validation_flag_rate(rows: Iterable[dict], flag: str) -> str:
     return _rate(preserved, total)
 
 
+def _duplicate_claim_rate(claims_normalized: Iterable[dict], claim_duplicates: Iterable[dict]) -> str:
+    normalized_claims = list(claims_normalized)
+    duplicated_claim_ids = set()
+    for group in claim_duplicates:
+        member_claim_ids = group.get("member_claim_ids", [])
+        if not isinstance(member_claim_ids, list):
+            continue
+        duplicated_claim_ids.update(str(value) for value in member_claim_ids)
+    return _rate(len(duplicated_claim_ids), len(normalized_claims))
+
+
+def _numeric_value(value: object) -> Optional[float]:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _numeric_metric_total(jobs: Iterable[dict], metric_names: Tuple[str, ...]) -> Optional[float]:
+    total = 0.0
+    found = False
+    for job in jobs:
+        metrics = job.get("metrics") or {}
+        if not isinstance(metrics, dict):
+            continue
+        for metric_name in metric_names:
+            value = _numeric_value(metrics.get(metric_name))
+            if value is None:
+                continue
+            total += value
+            found = True
+    if not found:
+        return None
+    return total
+
+
+def _metric_count(metrics: dict, key: str) -> int:
+    value = _numeric_value(metrics.get(key))
+    if value is None:
+        return 0
+    return max(0, int(value))
+
+
+def _repair_application_success_rate(jobs: Iterable[dict]) -> str:
+    applied = 0
+    failed = 0
+    for job in jobs:
+        if job.get("stage") != "apply_repairs":
+            continue
+        metrics = job.get("metrics") or {}
+        if not isinstance(metrics, dict):
+            continue
+        applied += _metric_count(metrics, "repairs_applied")
+        failed += _metric_count(metrics, "repairs_failed")
+    return _rate(applied, applied + failed)
+
+
+def _cost_per_accepted_claim(jobs: Iterable[dict], claims_validated: Iterable[dict]) -> str:
+    accepted_claims = list(claims_validated)
+    total_cost = _numeric_metric_total(jobs, ("cost_usd", "model_cost_usd", "total_cost_usd"))
+    if total_cost is None or not accepted_claims:
+        return "n/a"
+    return f"${total_cost / len(accepted_claims):.4f}"
+
+
+def _latency_per_source(jobs: Iterable[dict]) -> str:
+    job_records = list(jobs)
+    total_latency = _numeric_metric_total(
+        job_records,
+        ("latency_seconds", "duration_seconds", "elapsed_seconds", "runtime_seconds"),
+    )
+    source_ids = {str(job.get("source_id")) for job in job_records if job.get("source_id")}
+    if total_latency is None or not source_ids:
+        return "n/a"
+    return f"{total_latency / len(source_ids):.2f}s"
+
+
 def _review_disagreement_rate(rows: Iterable[dict]) -> str:
     latest_by_claim_and_reviewer: Dict[str, Dict[str, Tuple[str, str]]] = {}
     for row in rows:
@@ -257,10 +340,13 @@ def _quality_rows(
     claims_raw: List[dict],
     validations: List[dict],
     claims_validated: List[dict],
+    claims_normalized: List[dict],
     quarantine: List[dict],
     repair_suggestions: List[dict],
+    claim_duplicates: List[dict],
     gold_evaluations: List[dict],
     review_decisions: List[dict],
+    jobs: List[dict],
 ) -> List[Tuple[str, object]]:
     exact_matches = 0
     text_validated = 0
@@ -284,8 +370,12 @@ def _quality_rows(
         ("Uncertainty preservation rate", _validation_flag_rate(validations, "uncertainty_preserved")),
         ("Attribution preservation rate", _validation_flag_rate(validations, "attribution_preserved")),
         ("Quantity preservation rate", _validation_flag_rate(validations, "quantities_preserved")),
+        ("Duplicate normalized claim rate", _duplicate_claim_rate(claims_normalized, claim_duplicates)),
         ("Review disagreement rate", _review_disagreement_rate(review_decisions)),
         ("Evidence repair suggestion rate", _rate(len(repair_suggestions), len(claims_raw))),
+        ("Repair application success rate", _repair_application_success_rate(jobs)),
+        ("Cost per accepted claim", _cost_per_accepted_claim(jobs, claims_validated)),
+        ("Latency per source", _latency_per_source(jobs)),
         ("Accepted claims", len(claims_validated)),
         ("Quarantined claims", len(quarantine)),
         ("Evidence repair suggestions", len(repair_suggestions)),
@@ -304,6 +394,31 @@ def _quality_rows(
                     _format_optional_rate(latest_gold.get("quarantine_precision")),
                 ),
                 ("Gold quarantine recall", _format_optional_rate(latest_gold.get("quarantine_recall"))),
+                (
+                    "Gold evidence exact-match rate",
+                    _format_optional_rate(latest_gold.get("evidence_exact_match_rate")),
+                ),
+                (
+                    "Gold attribution preservation rate",
+                    _format_optional_rate(latest_gold.get("attribution_preservation_rate")),
+                ),
+                (
+                    "Gold uncertainty preservation rate",
+                    _format_optional_rate(latest_gold.get("uncertainty_preservation_rate")),
+                ),
+                (
+                    "Gold negation preservation rate",
+                    _format_optional_rate(latest_gold.get("negation_preservation_rate")),
+                ),
+                (
+                    "Gold quantity preservation rate",
+                    _format_optional_rate(latest_gold.get("quantity_preservation_rate")),
+                ),
+                (
+                    "Gold unsupported entity rate",
+                    _format_optional_rate(latest_gold.get("unsupported_entity_rate")),
+                ),
+                ("Gold validation quarantine rate", _format_optional_rate(latest_gold.get("quarantine_rate"))),
             ]
         )
     return rows
@@ -452,10 +567,13 @@ def render_summary_markdown(config: PipelineConfig) -> Tuple[str, Dict[str, int]
                 artifacts["claims_raw"],
                 artifacts["validations"],
                 artifacts["claims_validated"],
+                artifacts["claims_normalized"],
                 artifacts["quarantine"],
                 artifacts["claim_repairs"],
+                artifacts["claim_duplicates"],
                 artifacts["gold_eval"],
                 artifacts["review_decisions"],
+                artifacts["jobs"],
             ),
         )
     )

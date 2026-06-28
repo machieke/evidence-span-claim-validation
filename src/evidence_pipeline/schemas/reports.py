@@ -275,6 +275,13 @@ class GoldEvaluationRecord(StrictModel):
     quarantine_missing: int
     quarantine_precision: Optional[float] = None
     quarantine_recall: Optional[float] = None
+    evidence_exact_match_rate: Optional[float] = None
+    attribution_preservation_rate: Optional[float] = None
+    uncertainty_preservation_rate: Optional[float] = None
+    negation_preservation_rate: Optional[float] = None
+    quantity_preservation_rate: Optional[float] = None
+    unsupported_entity_rate: Optional[float] = None
+    quarantine_rate: Optional[float] = None
     missing_keys: List[Dict[str, str]] = Field(default_factory=list)
     false_positive_keys: List[Dict[str, str]] = Field(default_factory=list)
     missing_quarantine_keys: List[Dict[str, str]] = Field(default_factory=list)
@@ -308,6 +315,13 @@ class GoldEvaluationRecord(StrictModel):
             "accepted_recall",
             "quarantine_precision",
             "quarantine_recall",
+            "evidence_exact_match_rate",
+            "attribution_preservation_rate",
+            "uncertainty_preservation_rate",
+            "negation_preservation_rate",
+            "quantity_preservation_rate",
+            "unsupported_entity_rate",
+            "quarantine_rate",
         ):
             value = getattr(self, field_name)
             if value is not None and not (0 <= value <= 1):

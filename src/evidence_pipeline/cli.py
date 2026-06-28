@@ -1776,6 +1776,13 @@ def eval_gold_command(
             "accepted_recall": result.metrics["accepted_recall"],
             "quarantine_precision": result.metrics["quarantine_precision"],
             "quarantine_recall": result.metrics["quarantine_recall"],
+            "evidence_exact_match_rate": result.metrics["evidence_exact_match_rate"],
+            "attribution_preservation_rate": result.metrics["attribution_preservation_rate"],
+            "uncertainty_preservation_rate": result.metrics["uncertainty_preservation_rate"],
+            "negation_preservation_rate": result.metrics["negation_preservation_rate"],
+            "quantity_preservation_rate": result.metrics["quantity_preservation_rate"],
+            "unsupported_entity_rate": result.metrics["unsupported_entity_rate"],
+            "quarantine_rate": result.metrics["quarantine_rate"],
         },
         metadata={
             "gold_path": str(gold_file),
@@ -1787,7 +1794,8 @@ def eval_gold_command(
         f"{result.output_path} accepted_precision={result.metrics['accepted_precision']} "
         f"accepted_recall={result.metrics['accepted_recall']} "
         f"quarantine_precision={result.metrics['quarantine_precision']} "
-        f"quarantine_recall={result.metrics['quarantine_recall']}"
+        f"quarantine_recall={result.metrics['quarantine_recall']} "
+        f"evidence_exact_match_rate={result.metrics['evidence_exact_match_rate']}"
     )
 
 

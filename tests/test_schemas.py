@@ -361,9 +361,17 @@ def test_gold_evaluation_record_requires_valid_rates():
         quarantine_missing=0,
         quarantine_precision=None,
         quarantine_recall=None,
+        evidence_exact_match_rate=1.0,
+        attribution_preservation_rate=1.0,
+        uncertainty_preservation_rate=1.0,
+        negation_preservation_rate=1.0,
+        quantity_preservation_rate=1.0,
+        unsupported_entity_rate=0.0,
+        quarantine_rate=0.0,
     )
 
     assert record.schema_version == "gold.eval.v1"
+    assert record.evidence_exact_match_rate == 1.0
     assert SCHEMA_REGISTRY["gold_eval"] is GoldEvaluationRecord
 
     with pytest.raises(ValidationError):
@@ -383,4 +391,24 @@ def test_gold_evaluation_record_requires_valid_rates():
             quarantine_matches=0,
             quarantine_false_positives=0,
             quarantine_missing=0,
+        )
+
+    with pytest.raises(ValidationError):
+        GoldEvaluationRecord(
+            evaluation_id="gold_eval_3",
+            gold_path="gold.json",
+            gold_claims=1,
+            expected_accepted=1,
+            produced_accepted=1,
+            accepted_matches=1,
+            accepted_false_positives=0,
+            accepted_missing=0,
+            accepted_precision=1.0,
+            accepted_recall=1.0,
+            expected_quarantined=0,
+            produced_quarantined=0,
+            quarantine_matches=0,
+            quarantine_false_positives=0,
+            quarantine_missing=0,
+            evidence_exact_match_rate=1.5,
         )
