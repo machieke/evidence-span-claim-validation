@@ -46,7 +46,13 @@ def test_run_chat_is_idempotent(tmp_path: Path):
         assert len(list(read_jsonl(Path("data/jsonl/claims.validated.jsonl")))) == 2
         assert len(list(read_jsonl(Path("data/jsonl/claims.normalized.jsonl")))) == 2
         assert len(list(read_jsonl(Path("data/reports/claim_graph.jsonl")))) == 2
+        jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
+        assert [job["stage"] for job in jobs] == ["extract_claims", "validate_claims", "normalize_claims"]
+        assert [job["model_id"] for job in jobs] == ["rules.v1", "deterministic.v1", "normalizer.v1"]
+        assert len({job["source_id"] for job in jobs}) == 1
         assert Path("data/reports/extraction_summary.md").exists()
+        report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
+        assert "| jobs | 3 |" in report_text
 
 
 def test_run_images_is_idempotent(tmp_path: Path):
@@ -76,4 +82,14 @@ def test_run_images_is_idempotent(tmp_path: Path):
         assert len(list(read_jsonl(Path("data/jsonl/claims.validated.jsonl")))) == 1
         assert len(list(read_jsonl(Path("data/jsonl/claims.normalized.jsonl")))) == 1
         assert len(list(read_jsonl(Path("data/reports/claim_graph.jsonl")))) == 1
+        jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
+        assert [job["stage"] for job in jobs] == ["extract_claims", "validate_claims", "normalize_claims"]
+        assert [job["model_id"] for job in jobs] == [
+            "image_region.rules.v1+image_cluster.rules.v1",
+            "deterministic.v1",
+            "normalizer.v1",
+        ]
+        assert len({job["source_id"] for job in jobs}) == 1
         assert Path("data/reports/extraction_summary.md").exists()
+        report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
+        assert "| jobs | 3 |" in report_text

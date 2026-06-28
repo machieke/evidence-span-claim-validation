@@ -146,6 +146,65 @@ def _extract_model_id(modality: str) -> str:
     return RULE_EXTRACTOR_VERSION
 
 
+def _record_extract_claims_job(
+    config: PipelineConfig,
+    modality: str,
+    source_id: Optional[str],
+    result,
+    batch_size: Optional[int] = None,
+) -> None:
+    metrics = {"claims_created": result.created, "claims_skipped": result.skipped}
+    metadata = {"modality": modality}
+    if batch_size is not None:
+        metrics["batches_processed"] = result.batches_processed
+        metadata["batch_size"] = batch_size
+    record_job_result(
+        config,
+        stage="extract_claims",
+        source_id=source_id,
+        input_record_ids=_stage_input_ids(f"modality:{modality}", source_id=source_id),
+        model_id=_extract_model_id(modality),
+        metrics=metrics,
+        metadata=metadata,
+    )
+
+
+def _record_validate_claims_job(
+    config: PipelineConfig,
+    source_id: Optional[str],
+    claim_ids: Optional[List[str]],
+    result,
+) -> None:
+    record_job_result(
+        config,
+        stage="validate_claims",
+        source_id=source_id,
+        input_record_ids=_stage_input_ids("claims_raw", source_id=source_id, record_ids=claim_ids),
+        model_id=VALIDATOR_VERSION,
+        metrics={
+            "claims_accepted": result.accepted,
+            "claims_quarantined": result.quarantined,
+            "claims_skipped": result.skipped,
+        },
+    )
+
+
+def _record_normalize_claims_job(
+    config: PipelineConfig,
+    source_id: Optional[str],
+    claim_ids: Optional[List[str]],
+    result,
+) -> None:
+    record_job_result(
+        config,
+        stage="normalize_claims",
+        source_id=source_id,
+        input_record_ids=_stage_input_ids("claims_validated", source_id=source_id, record_ids=claim_ids),
+        model_id=NORMALIZER_VERSION,
+        metrics={"claims_normalized": result.created, "claims_skipped": result.skipped},
+    )
+
+
 @app.command("init")
 def init_command(
     config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
@@ -658,6 +717,9 @@ def run_chat_command(
     extract_result = extract_claims_from_spans(config, modality="chat", source_id=ingest_result.source_id)
     validation_result = validate_raw_claims(config, source_id=ingest_result.source_id)
     normalization_result = normalize_claims(config, source_id=ingest_result.source_id)
+    _record_extract_claims_job(config, "chat", ingest_result.source_id, extract_result)
+    _record_validate_claims_job(config, ingest_result.source_id, None, validation_result)
+    _record_normalize_claims_job(config, ingest_result.source_id, None, normalization_result)
     graph_result = export_graph_jsonl(config)
     report_result = write_summary_report(config)
     typer.echo(
@@ -690,6 +752,9 @@ def run_pdf_command(
     extract_result = extract_claims_from_spans(config, modality="pdf", source_id=ingest_result.source_id)
     validation_result = validate_raw_claims(config, source_id=ingest_result.source_id)
     normalization_result = normalize_claims(config, source_id=ingest_result.source_id)
+    _record_extract_claims_job(config, "pdf", ingest_result.source_id, extract_result)
+    _record_validate_claims_job(config, ingest_result.source_id, None, validation_result)
+    _record_normalize_claims_job(config, ingest_result.source_id, None, normalization_result)
     graph_result = export_graph_jsonl(config)
     report_result = write_summary_report(config)
     typer.echo(
@@ -719,6 +784,9 @@ def run_audio_transcript_command(
     extract_result = extract_claims_from_spans(config, modality="audio", source_id=ingest_result.source_id)
     validation_result = validate_raw_claims(config, source_id=ingest_result.source_id)
     normalization_result = normalize_claims(config, source_id=ingest_result.source_id)
+    _record_extract_claims_job(config, "audio", ingest_result.source_id, extract_result)
+    _record_validate_claims_job(config, ingest_result.source_id, None, validation_result)
+    _record_normalize_claims_job(config, ingest_result.source_id, None, normalization_result)
     graph_result = export_graph_jsonl(config)
     report_result = write_summary_report(config)
     typer.echo(
@@ -771,6 +839,9 @@ def run_images_command(
         extract_result = extract_claims_from_spans(config, modality="image", source_id=source_id)
         validation_result = validate_raw_claims(config, source_id=source_id)
         normalization_result = normalize_claims(config, source_id=source_id)
+        _record_extract_claims_job(config, "image", source_id, extract_result)
+        _record_validate_claims_job(config, source_id, None, validation_result)
+        _record_normalize_claims_job(config, source_id, None, normalization_result)
         regions_created += region_result.created
         evidence_created += evidence_result.created + cluster_evidence_result.created
         embeddings_created += embedding_result.created
@@ -800,18 +871,7 @@ def validate_claims_command(
     config = load_config(config_path)
     _init_paths(config)
     result = validate_raw_claims(config, source_id=source_id, claim_ids=claim_id)
-    record_job_result(
-        config,
-        stage="validate_claims",
-        source_id=source_id,
-        input_record_ids=_stage_input_ids("claims_raw", source_id=source_id, record_ids=claim_id),
-        model_id=VALIDATOR_VERSION,
-        metrics={
-            "claims_accepted": result.accepted,
-            "claims_quarantined": result.quarantined,
-            "claims_skipped": result.skipped,
-        },
-    )
+    _record_validate_claims_job(config, source_id, claim_id, result)
     typer.echo(
         f"claims_accepted={result.accepted} claims_quarantined={result.quarantined} "
         f"claims_skipped={result.skipped}"
@@ -837,20 +897,7 @@ def extract_claims_command(
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc))
-    metrics = {"claims_created": result.created, "claims_skipped": result.skipped}
-    metadata = {"modality": modality}
-    if batch_size is not None:
-        metrics["batches_processed"] = result.batches_processed
-        metadata["batch_size"] = batch_size
-    record_job_result(
-        config,
-        stage="extract_claims",
-        source_id=source_id,
-        input_record_ids=_stage_input_ids(f"modality:{modality}", source_id=source_id),
-        model_id=_extract_model_id(modality),
-        metrics=metrics,
-        metadata=metadata,
-    )
+    _record_extract_claims_job(config, modality, source_id, result, batch_size=batch_size)
     message = f"claims_created={result.created} claims_skipped={result.skipped}"
     if batch_size is not None:
         message = f"{message} batches_processed={result.batches_processed}"
@@ -925,14 +972,7 @@ def normalize_claims_command(
     config = load_config(config_path)
     _init_paths(config)
     result = normalize_claims(config, source_id=source_id, claim_ids=claim_id)
-    record_job_result(
-        config,
-        stage="normalize_claims",
-        source_id=source_id,
-        input_record_ids=_stage_input_ids("claims_validated", source_id=source_id, record_ids=claim_id),
-        model_id=NORMALIZER_VERSION,
-        metrics={"claims_normalized": result.created, "claims_skipped": result.skipped},
-    )
+    _record_normalize_claims_job(config, source_id, claim_id, result)
     typer.echo(f"claims_normalized={result.created} claims_skipped={result.skipped}")
 
 
