@@ -224,6 +224,11 @@ class ClaimDuplicateGroupRecord(StrictModel):
     member_normalized_claim_ids: List[str]
     source_ids: List[str]
     evidence_ids: List[str]
+    duplicate_level: str = "same_normalized_proposition"
+    cross_source: bool = False
+    source_count: int = 0
+    evidence_count: int = 0
+    omitted_qualifier_keys: List[str] = Field(default_factory=list)
     schema_version: str = "claim.dedupe.v1"
 
     @model_validator(mode="after")
@@ -240,6 +245,15 @@ class ClaimDuplicateGroupRecord(StrictModel):
             raise ValueError("member_count must match evidence_ids")
         if not self.source_ids:
             raise ValueError("duplicate groups require at least one source_id")
+        source_count = len(set(self.source_ids))
+        evidence_count = len(set(self.evidence_ids))
+        if self.source_count not in {0, source_count}:
+            raise ValueError("source_count must match source_ids")
+        if self.evidence_count not in {0, evidence_count}:
+            raise ValueError("evidence_count must match evidence_ids")
+        self.source_count = source_count
+        self.evidence_count = evidence_count
+        self.cross_source = source_count > 1
         return self
 
 

@@ -373,6 +373,13 @@ def render_summary_markdown(config: PipelineConfig) -> Tuple[str, Dict[str, int]
             _count_entity_resolution_bases(artifacts["claims_normalized"]),
         )
     )
+    lines.extend(
+        _counter_table(
+            "Duplicate Groups By Level",
+            "Level",
+            _count_by(artifacts["claim_duplicates"], "duplicate_level"),
+        )
+    )
     lines.extend(_counter_table("Validation Statuses", "Status", _count_validation_status(artifacts["validations"])))
     lines.extend(
         _counter_table(

@@ -49,6 +49,11 @@ def test_dedupe_claims_groups_duplicate_normalized_claims(tmp_path: Path):
         assert len(groups) == 1
         assert groups[0]["member_count"] == 2
         assert groups[0]["member_claim_ids"] == ["claim_1", "claim_2"]
+        assert groups[0]["duplicate_level"] == "same_source_distinct_evidence"
+        assert groups[0]["source_count"] == 1
+        assert groups[0]["evidence_count"] == 2
+        assert groups[0]["cross_source"] is False
+        assert groups[0]["omitted_qualifier_keys"] == []
 
         jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
         assert len(jobs) == 1
@@ -67,6 +72,8 @@ def test_dedupe_claims_groups_duplicate_normalized_claims(tmp_path: Path):
         report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
         assert "| jobs | 1 |" in report_text
         assert "| dedupe_claims | 1 |" in report_text
+        assert "## Duplicate Groups By Level" in report_text
+        assert "| same_source_distinct_evidence | 1 |" in report_text
 
         artifact_check = runner.invoke(app, ["validate-artifacts", "--include-reports"])
         assert artifact_check.exit_code == 0, artifact_check.stdout
@@ -117,6 +124,11 @@ def test_dedupe_claims_groups_cross_source_normalized_propositions(tmp_path: Pat
         assert len(groups) == 1
         assert groups[0]["member_count"] == 2
         assert groups[0]["source_ids"] == ["src_1", "src_2"]
+        assert groups[0]["duplicate_level"] == "cross_source_corroboration_candidate"
+        assert groups[0]["source_count"] == 2
+        assert groups[0]["evidence_count"] == 2
+        assert groups[0]["cross_source"] is True
+        assert groups[0]["omitted_qualifier_keys"] == ["attribution", "source_faithful_claim"]
         assert groups[0]["normalized_proposition"] == {
             "subject": "entity:vessel_hope",
             "predicate": "has_feature",
@@ -124,3 +136,21 @@ def test_dedupe_claims_groups_cross_source_normalized_propositions(tmp_path: Pat
             "qualifiers": {"truth_status": "source_asserted_unverified"},
         }
         assert "attribution" not in groups[0]["normalized_proposition"]["qualifiers"]
+
+
+def test_dedupe_claims_can_emit_singleton_groups(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        init = runner.invoke(app, ["init"])
+        assert init.exit_code == 0
+        append_jsonl(Path("data/jsonl/claims.normalized.jsonl"), _normalized_claim("claim_1", "ev_1", "Hope had masts."))
+
+        result = runner.invoke(app, ["dedupe-claims", "--include-singletons"])
+
+        assert result.exit_code == 0, result.stdout
+        groups = [payload for _, payload in read_jsonl(Path("data/reports/claim_duplicates.jsonl"))]
+        assert len(groups) == 1
+        assert groups[0]["member_count"] == 1
+        assert groups[0]["duplicate_level"] == "singleton"
+        assert groups[0]["source_count"] == 1
+        assert groups[0]["evidence_count"] == 1
+        assert groups[0]["cross_source"] is False

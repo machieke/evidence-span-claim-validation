@@ -47,6 +47,28 @@ def _dedupe_key(record: NormalizedClaimRecord) -> str:
     return json.dumps(_normalized_proposition(record), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
+def _omitted_qualifier_keys(records: List[NormalizedClaimRecord]) -> List[str]:
+    keys = set()
+    for record in records:
+        qualifiers = record.normalized_claim.get("qualifiers")
+        if not isinstance(qualifiers, dict):
+            continue
+        keys.update(str(key) for key in qualifiers if key not in DEDUPE_QUALIFIER_KEYS)
+    return sorted(keys)
+
+
+def _duplicate_level(records: List[NormalizedClaimRecord]) -> str:
+    source_count = len({record.source_id for record in records})
+    evidence_count = len({record.evidence_id for record in records})
+    if len(records) == 1:
+        return "singleton"
+    if source_count > 1:
+        return "cross_source_corroboration_candidate"
+    if evidence_count > 1:
+        return "same_source_distinct_evidence"
+    return "same_evidence_duplicate"
+
+
 def _group_record(key: str, records: List[NormalizedClaimRecord]) -> Dict[str, object]:
     return ClaimDuplicateGroupRecord(
         dedupe_id=stable_id("dedupe", {"normalized_claim": key}),
@@ -57,6 +79,8 @@ def _group_record(key: str, records: List[NormalizedClaimRecord]) -> Dict[str, o
         member_normalized_claim_ids=[record.normalized_claim_id for record in records],
         source_ids=sorted({record.source_id for record in records}),
         evidence_ids=[record.evidence_id for record in records],
+        duplicate_level=_duplicate_level(records),
+        omitted_qualifier_keys=_omitted_qualifier_keys(records),
     ).model_dump(mode="json")
 
 

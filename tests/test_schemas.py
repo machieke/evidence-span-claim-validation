@@ -319,6 +319,10 @@ def test_claim_duplicate_group_record_requires_consistent_member_count():
     )
 
     assert record.schema_version == "claim.dedupe.v1"
+    assert record.source_count == 1
+    assert record.evidence_count == 2
+    assert record.cross_source is False
+    assert record.duplicate_level == "same_normalized_proposition"
     assert SCHEMA_REGISTRY["claim_duplicates"] is ClaimDuplicateGroupRecord
 
     with pytest.raises(ValidationError):
