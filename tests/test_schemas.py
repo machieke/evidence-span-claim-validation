@@ -97,9 +97,13 @@ def test_graph_edge_record_requires_stable_identifiers():
         subject="speaker:alice",
         predicate="asserts",
         object="Hope had three masts.",
+        modality="asserted",
+        source_faithful_claim="The speaker asserted: Hope had three masts.",
     )
 
     assert record.schema_version == "graph.edge.v1"
+    assert record.modality == "asserted"
+    assert record.source_faithful_claim == "The speaker asserted: Hope had three masts."
     assert SCHEMA_REGISTRY["claim_graph"] is GraphEdgeRecord
 
     with pytest.raises(ValidationError):

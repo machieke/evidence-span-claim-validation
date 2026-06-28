@@ -17,6 +17,8 @@ class GraphEdgeRecord(StrictModel):
     subject: Any
     predicate: str
     object: Any
+    modality: Optional[str] = None
+    source_faithful_claim: Optional[str] = None
     truth_status: Optional[str] = None
     attribution: Optional[Dict[str, Any]] = None
     qualifiers: Dict[str, Any] = Field(default_factory=dict)

@@ -118,8 +118,10 @@ def test_chat_pipeline_is_idempotent(tmp_path: Path):
         assert len(edges) == 3
         assert all(edge["schema_version"] == "graph.edge.v1" for edge in edges)
         assert {edge["predicate"] for edge in edges} >= {"asserts", "asks_whether"}
+        assert all(edge["modality"] in {"asserted", "question_asked"} for edge in edges)
         assert all(edge["truth_status"] == "speaker_asserted_unverified" for edge in edges)
         assert all(edge["attribution"]["type"] == "speaker" for edge in edges)
+        assert all(edge["source_faithful_claim"].strip() for edge in edges)
         jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
         assert [job["stage"] for job in jobs] == [
             "ingest_chat",
