@@ -89,6 +89,81 @@ def test_core_stage_commands_write_idempotent_job_records(tmp_path: Path):
         assert artifact_check.exit_code == 0, artifact_check.stdout
 
 
+def test_extract_claims_can_append_in_batches(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        init = runner.invoke(app, ["init"])
+        assert init.exit_code == 0
+
+        for index, text in enumerate(
+            [
+                "Hope had three masts.",
+                "Hope had a diesel engine.",
+                "Hope was docked yesterday.",
+            ],
+            start=1,
+        ):
+            append_jsonl(
+                Path("data/jsonl/evidence.jsonl"),
+                EvidenceRecord(
+                    evidence_id=f"ev_msg_{index}",
+                    source_id="src_chat_1",
+                    source_modality="chat",
+                    evidence_type="message_span",
+                    text=text,
+                    provenance={"message_id": f"msg_{index}", "sender_id": "alice"},
+                ),
+            )
+            append_jsonl(
+                Path("data/jsonl/spans.jsonl"),
+                SpanRecord(
+                    span_id=f"span_{index}",
+                    source_id="src_chat_1",
+                    source_modality="chat",
+                    evidence_id=f"ev_msg_{index}",
+                    text=text,
+                    char_start=0,
+                    char_end=len(text),
+                    label="claim_bearing",
+                    score=0.9,
+                ),
+            )
+
+        first = runner.invoke(
+            app,
+            ["extract-claims", "--modality", "chat", "--batch-size", "2"],
+        )
+        second = runner.invoke(
+            app,
+            ["extract-claims", "--modality", "chat", "--batch-size", "2"],
+        )
+        invalid = runner.invoke(
+            app,
+            ["extract-claims", "--modality", "chat", "--batch-size", "0"],
+        )
+
+        assert first.exit_code == 0, first.stdout
+        assert "claims_created=3" in first.stdout
+        assert "claims_skipped=0" in first.stdout
+        assert "batches_processed=2" in first.stdout
+        assert second.exit_code == 0, second.stdout
+        assert "claims_created=0" in second.stdout
+        assert "claims_skipped=3" in second.stdout
+        assert "batches_processed=0" in second.stdout
+        assert invalid.exit_code != 0
+        assert "batch size must be at least 1" in invalid.stdout
+
+        claims = [payload for _, payload in read_jsonl(Path("data/jsonl/claims.raw.jsonl"))]
+        assert len(claims) == 3
+        jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
+        assert len(jobs) == 1
+        assert jobs[0]["metrics"] == {
+            "batches_processed": 2,
+            "claims_created": 3,
+            "claims_skipped": 0,
+        }
+        assert jobs[0]["metadata"] == {"batch_size": 2, "modality": "chat"}
+
+
 def test_record_job_result_persists_auditable_model_and_prompt_ids(tmp_path: Path):
     with runner.isolated_filesystem(temp_dir=tmp_path):
         config = PipelineConfig()

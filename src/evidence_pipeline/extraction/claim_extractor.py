@@ -29,6 +29,7 @@ CLAIM_JSON_EXTRACTOR = DeterministicJsonExtractor()
 class ClaimExtractionResult:
     created: int
     skipped: int
+    batches_processed: int = 0
 
 
 def _claim_id(span: SpanRecord, extractor: str) -> str:
@@ -297,9 +298,12 @@ def extract_claims_from_spans(
     config: PipelineConfig,
     modality: str = "all",
     source_id: Optional[str] = None,
+    batch_size: Optional[int] = None,
 ) -> ClaimExtractionResult:
     if modality not in SUPPORTED_MODALITIES:
         raise ValueError("baseline extractor currently supports all, chat, pdf, audio, or image")
+    if batch_size is not None and batch_size < 1:
+        raise ValueError("batch size must be at least 1")
 
     paths = config.jsonl_paths()
     evidence_by_id = {
@@ -309,6 +313,32 @@ def extract_claims_from_spans(
     existing_claim_ids = existing_values(paths["claims_raw"], "claim_id")
     created = 0
     skipped = 0
+    batches_processed = 0
+    pending_batch: List[RawClaimRecord] = []
+
+    def flush_batch() -> None:
+        nonlocal batches_processed, created
+        if not pending_batch:
+            return
+        for pending_record in pending_batch:
+            append_jsonl(paths["claims_raw"], pending_record)
+        created += len(pending_batch)
+        pending_batch.clear()
+        batches_processed += 1
+
+    def append_record(record: RawClaimRecord) -> None:
+        nonlocal created, skipped
+        if record.claim_id in existing_claim_ids:
+            skipped += 1
+            return
+        existing_claim_ids.add(record.claim_id)
+        if batch_size is None:
+            append_jsonl(paths["claims_raw"], record)
+            created += 1
+            return
+        pending_batch.append(record)
+        if len(pending_batch) >= batch_size:
+            flush_batch()
 
     if modality in {"all", "image"}:
         for evidence in evidence_by_id.values():
@@ -323,12 +353,7 @@ def extract_claims_from_spans(
                 record = _raw_image_cluster_claim_from_evidence(evidence)
             else:
                 record = _raw_image_claim_from_evidence(evidence)
-            if record.claim_id in existing_claim_ids:
-                skipped += 1
-                continue
-            append_jsonl(paths["claims_raw"], record)
-            existing_claim_ids.add(record.claim_id)
-            created += 1
+            append_record(record)
 
     for _, span in read_jsonl_records(paths["spans"], SpanRecord):
         if span.label != "claim_bearing":
@@ -346,11 +371,11 @@ def extract_claims_from_spans(
         if span.source_modality == "image" and evidence.evidence_type != "ocr_text_span":
             continue
         record = _raw_claim_from_span(span, evidence)
-        if record.claim_id in existing_claim_ids:
-            skipped += 1
-            continue
-        append_jsonl(paths["claims_raw"], record)
-        existing_claim_ids.add(record.claim_id)
-        created += 1
+        append_record(record)
 
-    return ClaimExtractionResult(created=created, skipped=skipped)
+    flush_batch()
+    return ClaimExtractionResult(
+        created=created,
+        skipped=skipped,
+        batches_processed=batches_processed,
+    )

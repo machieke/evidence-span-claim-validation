@@ -822,25 +822,39 @@ def validate_claims_command(
 def extract_claims_command(
     modality: str = typer.Option("all", "--modality", help="Modality to extract: all, chat, pdf, audio, or image."),
     source_id: Optional[str] = typer.Option(None, "--source-id", help="Only extract claims for this source."),
+    batch_size: Optional[int] = typer.Option(None, "--batch-size", help="Append extracted claims in batches of N."),
     config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
 ) -> None:
     """Extract source-faithful raw claims from detected spans using the baseline rules extractor."""
     config = load_config(config_path)
     _init_paths(config)
     try:
-        result = extract_claims_from_spans(config, modality=modality, source_id=source_id)
+        result = extract_claims_from_spans(
+            config,
+            modality=modality,
+            source_id=source_id,
+            batch_size=batch_size,
+        )
     except ValueError as exc:
         raise typer.BadParameter(str(exc))
+    metrics = {"claims_created": result.created, "claims_skipped": result.skipped}
+    metadata = {"modality": modality}
+    if batch_size is not None:
+        metrics["batches_processed"] = result.batches_processed
+        metadata["batch_size"] = batch_size
     record_job_result(
         config,
         stage="extract_claims",
         source_id=source_id,
         input_record_ids=_stage_input_ids(f"modality:{modality}", source_id=source_id),
         model_id=_extract_model_id(modality),
-        metrics={"claims_created": result.created, "claims_skipped": result.skipped},
-        metadata={"modality": modality},
+        metrics=metrics,
+        metadata=metadata,
     )
-    typer.echo(f"claims_created={result.created} claims_skipped={result.skipped}")
+    message = f"claims_created={result.created} claims_skipped={result.skipped}"
+    if batch_size is not None:
+        message = f"{message} batches_processed={result.batches_processed}"
+    typer.echo(message)
 
 
 @app.command("import-raw-claims")
