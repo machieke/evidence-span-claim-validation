@@ -34,6 +34,7 @@ PYTHONPATH=src python3 -m evidence_pipeline redact-pii --artifact chat_messages
 PYTHONPATH=src python3 -m evidence_pipeline check-privacy
 PYTHONPATH=src python3 -m evidence_pipeline retention-plan
 PYTHONPATH=src python3 -m evidence_pipeline repair-claims
+PYTHONPATH=src python3 -m evidence_pipeline apply-repairs
 PYTHONPATH=src python3 -m evidence_pipeline normalize-claims
 PYTHONPATH=src python3 -m evidence_pipeline export-graph
 PYTHONPATH=src python3 -m evidence_pipeline export-sqlite

@@ -64,8 +64,10 @@ from evidence_pipeline.validation.deterministic import VALIDATOR_VERSION, valida
 from evidence_pipeline.validation.pii import PII_PROCESSOR_VERSION, detect_pii, redact_pii
 from evidence_pipeline.validation.privacy import PRIVACY_CHECK_VERSION, check_privacy_policy
 from evidence_pipeline.validation.repair import (
+    REPAIR_APPLICATION_VERSION,
     REPAIR_REASON_CODES,
     REPAIR_SUGGESTION_VERSION,
+    apply_evidence_repairs,
     suggest_evidence_repairs,
 )
 from evidence_pipeline.validation.review import REVIEW_QUEUE_VERSION, record_claim_review, write_review_queue
@@ -1925,6 +1927,43 @@ def repair_claims_command(
         metadata={"only_reason_codes": sorted(only or []), "output_path": str(result.output_path)},
     )
     typer.echo(f"{result.output_path} suggestions={result.suggestion_count}")
+
+
+@app.command("apply-repairs")
+def apply_repairs_command(
+    input_path: Optional[Path] = typer.Option(None, "--input", "-i", help="Repair suggestion JSONL input path."),
+    repair_id: Optional[List[str]] = typer.Option(None, "--repair-id", help="Only apply the selected repair ID. Repeatable."),
+    actor_id: Optional[str] = typer.Option(None, "--actor-id", help="Optional actor applying repairs."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Apply exact evidence_text repair suggestions as new raw claims."""
+    config = load_config(config_path)
+    _init_paths(config)
+    if input_path is not None and (not input_path.exists() or not input_path.is_file()):
+        raise typer.BadParameter(f"repair input does not exist: {input_path}")
+    result = apply_evidence_repairs(
+        config,
+        input_path=input_path,
+        repair_ids=repair_id,
+        actor_id=actor_id,
+    )
+    effective_input_path = input_path or config.paths.reports_dir / "claim_repairs.jsonl"
+    input_ids = result.claim_ids or ["claims_raw"]
+    input_ids.append(f"repairs:{effective_input_path}")
+    input_ids.extend(f"repair_id:{value}" for value in repair_id or [])
+    record_job_result(
+        config,
+        stage="apply_repairs",
+        source_id=_single_source_id(result.source_ids),
+        input_record_ids=input_ids,
+        model_id=REPAIR_APPLICATION_VERSION,
+        metrics={"repairs_applied": result.applied, "repairs_skipped": result.skipped, "repairs_failed": result.failed},
+        metadata={"actor_id": actor_id, "input_path": str(effective_input_path)},
+    )
+    typer.echo(
+        f"repairs_applied={result.applied} repairs_skipped={result.skipped} "
+        f"repairs_failed={result.failed}"
+    )
 
 
 @app.command("detect-pii")
