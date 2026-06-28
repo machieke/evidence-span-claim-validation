@@ -72,12 +72,25 @@ def test_export_sqlite_writes_artifact_tables_and_counts(tmp_path: Path):
                 "schema_version": "model.routing.v1",
             },
         )
+        append_jsonl(
+            Path("data/reports/review_queue.jsonl"),
+            {
+                "review_queue_id": "reviewq_1",
+                "claim_id": "claim_1",
+                "source_id": "src_1",
+                "evidence_id": "ev_1",
+                "validation_status": "quarantined",
+                "reason_codes": ["image_label_low_confidence"],
+                "review_state": "unreviewed",
+                "schema_version": "review.queue.v1",
+            },
+        )
 
         first = runner.invoke(app, ["export-sqlite"])
         second = runner.invoke(app, ["export-sqlite"])
         assert first.exit_code == 0, first.stdout
         assert second.exit_code == 0, second.stdout
-        assert "records=4" in first.stdout
+        assert "records=5" in first.stdout
 
         database_path = Path("data/reports/pipeline.sqlite")
         assert database_path.exists()
@@ -86,6 +99,7 @@ def test_export_sqlite_writes_artifact_tables_and_counts(tmp_path: Path):
             claims_count = connection.execute("SELECT COUNT(*) FROM claims_raw").fetchone()[0]
             graph_count = connection.execute("SELECT COUNT(*) FROM claim_graph").fetchone()[0]
             routing_count = connection.execute("SELECT COUNT(*) FROM model_routing").fetchone()[0]
+            review_queue_count = connection.execute("SELECT COUNT(*) FROM review_queue").fetchone()[0]
             jobs_count = connection.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
             review_count = connection.execute("SELECT COUNT(*) FROM review_decisions").fetchone()[0]
             audit_count = connection.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0]
@@ -101,6 +115,10 @@ def test_export_sqlite_writes_artifact_tables_and_counts(tmp_path: Path):
                 "SELECT record_count FROM artifact_counts WHERE artifact_name = ?",
                 ("model_routing",),
             ).fetchone()[0]
+            review_queue_artifact_count = connection.execute(
+                "SELECT record_count FROM artifact_counts WHERE artifact_name = ?",
+                ("review_queue",),
+            ).fetchone()[0]
             payload_json = connection.execute(
                 "SELECT payload_json FROM claims_raw WHERE record_key = ?",
                 ("claim_1",),
@@ -113,17 +131,24 @@ def test_export_sqlite_writes_artifact_tables_and_counts(tmp_path: Path):
                 "SELECT payload_json FROM model_routing WHERE record_key = ?",
                 ("route_1",),
             ).fetchone()[0]
+            review_queue_payload_json = connection.execute(
+                "SELECT payload_json FROM review_queue WHERE record_key = ?",
+                ("reviewq_1",),
+            ).fetchone()[0]
 
         assert evidence_count == 1
         assert claims_count == 1
         assert graph_count == 1
         assert routing_count == 1
+        assert review_queue_count == 1
         assert jobs_count == 0
         assert review_count == 0
         assert audit_count == 0
         assert artifact_count == 1
         assert graph_artifact_count == 1
         assert routing_artifact_count == 1
+        assert review_queue_artifact_count == 1
         assert json.loads(payload_json)["claim_id"] == "claim_1"
         assert json.loads(graph_payload_json)["edge_id"] == "edge_1"
         assert json.loads(routing_payload_json)["routing_id"] == "route_1"
+        assert json.loads(review_queue_payload_json)["review_queue_id"] == "reviewq_1"

@@ -39,6 +39,7 @@ ARTIFACT_KEY_FIELDS = {
     "pii_redactions": "redaction_id",
     "privacy_policy_violations": "violation_id",
     "retention_plan": "retention_id",
+    "review_queue": "review_queue_id",
 }
 
 REPORT_JSONL_FILES = {
@@ -51,6 +52,7 @@ REPORT_JSONL_FILES = {
     "pii_redactions": "pii_redactions.jsonl",
     "privacy_policy_violations": "privacy_policy_violations.jsonl",
     "retention_plan": "retention_plan.jsonl",
+    "review_queue": "review_queue.jsonl",
 }
 
 
