@@ -353,9 +353,25 @@ def _first_present(anchor: dict, keys: List[str]) -> object:
     return None
 
 
+def _milliseconds_as_seconds(value: object) -> object:
+    if value is None or isinstance(value, bool):
+        return value
+    try:
+        return f"{float(value) / 1000:g}"
+    except (TypeError, ValueError):
+        return value
+
+
+def _time_value(anchor: dict, seconds_key: str, milliseconds_key: str) -> object:
+    seconds = anchor.get(seconds_key)
+    if seconds is not None:
+        return seconds
+    return _milliseconds_as_seconds(anchor.get(milliseconds_key))
+
+
 def _time_fragment(anchor: dict) -> str:
-    start = _first_present(anchor, ["start_seconds", "start_ms"])
-    end = _first_present(anchor, ["end_seconds", "end_ms"])
+    start = _time_value(anchor, "start_seconds", "start_ms")
+    end = _time_value(anchor, "end_seconds", "end_ms")
     if start is None and end is None:
         return ""
     start_text = "" if start is None else str(start)

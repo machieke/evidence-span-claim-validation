@@ -9,6 +9,7 @@ from evidence_pipeline.schemas.claims import NormalizedClaimRecord, RawClaimReco
 from evidence_pipeline.schemas.evidence import EvidenceRecord
 from evidence_pipeline.schemas.sources import SourceRecord
 from evidence_pipeline.schemas.validation import ValidationRecord
+from evidence_pipeline.validation.review import render_review_queue_html
 
 
 runner = CliRunner()
@@ -430,3 +431,68 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
         invalid_format = runner.invoke(app, ["review-queue", "--format", "pdf"])
         assert invalid_format.exit_code != 0
         assert "review queue format must be jsonl or html" in invalid_format.stdout
+
+
+def test_review_queue_html_renders_text_pdf_and_audio_previews():
+    html_text = render_review_queue_html(
+        [
+            {
+                "claim_id": "claim_chat_1",
+                "source_modality": "chat",
+                "review_state": "unreviewed",
+                "validation_status": "needs_review",
+                "reason_codes": [],
+                "warnings": [],
+                "risk_flags": [],
+                "source_file": "chat.json",
+                "source_faithful_claim": "Alice said the invoice is late.",
+                "evidence_text": "the invoice is late",
+                "normalized_claims": [],
+                "review_commands": {},
+            },
+            {
+                "claim_id": "claim_pdf_1",
+                "source_modality": "pdf",
+                "review_state": "unreviewed",
+                "validation_status": "needs_review",
+                "reason_codes": [],
+                "warnings": [],
+                "risk_flags": [],
+                "source_file": "data/raw/report.pdf",
+                "source_faithful_claim": "The report states revenue increased.",
+                "evidence_anchor": {
+                    "source_modality": "pdf",
+                    "source_file": "data/raw/report.pdf",
+                    "page": 2,
+                    "bbox": [72.0, 100.0, 500.0, 140.0],
+                },
+                "normalized_claims": [],
+                "review_commands": {},
+            },
+            {
+                "claim_id": "claim_audio_1",
+                "source_modality": "audio",
+                "review_state": "unreviewed",
+                "validation_status": "needs_review",
+                "reason_codes": [],
+                "warnings": [],
+                "risk_flags": [],
+                "source_file": "data/raw/meeting.wav",
+                "source_faithful_claim": "Speaker A said the launch starts Monday.",
+                "evidence_anchor": {
+                    "source_modality": "audio",
+                    "source_file": "data/raw/meeting.wav",
+                    "start_ms": 0,
+                    "end_ms": 2500,
+                },
+                "normalized_claims": [],
+                "review_commands": {},
+            },
+        ],
+        base_path=Path("data/reports"),
+    )
+
+    assert '<mark class="evidence-preview-text">the invoice is late</mark>' in html_text
+    assert 'href="../raw/report.pdf#page=2">Open PDF evidence</a>' in html_text
+    assert '<audio controls src="../raw/meeting.wav#t=0,2.5"></audio>' in html_text
+    assert 'href="../raw/meeting.wav#t=0,2.5">Open audio clip</a>' in html_text
