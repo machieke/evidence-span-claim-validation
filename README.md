@@ -27,6 +27,7 @@ PYTHONPATH=src python3 -m evidence_pipeline chunk-chat
 PYTHONPATH=src python3 -m evidence_pipeline detect-chat-spans
 PYTHONPATH=src python3 -m evidence_pipeline route-models --stage extraction
 PYTHONPATH=src python3 -m evidence_pipeline extract-claims --modality chat
+PYTHONPATH=src python3 -m evidence_pipeline extract-claims --modality chat --batch-size 50
 PYTHONPATH=src python3 -m evidence_pipeline validate-claims
 PYTHONPATH=src python3 -m evidence_pipeline detect-pii
 PYTHONPATH=src python3 -m evidence_pipeline redact-pii --artifact chat_messages
@@ -39,10 +40,14 @@ PYTHONPATH=src python3 -m evidence_pipeline export-sqlite
 PYTHONPATH=src python3 -m evidence_pipeline export-metta
 PYTHONPATH=src python3 -m evidence_pipeline dedupe-claims
 PYTHONPATH=src python3 -m evidence_pipeline report
+PYTHONPATH=src python3 -m evidence_pipeline report --format html
 PYTHONPATH=src python3 -m evidence_pipeline review-claim claim_... --decision accept --reviewer-id reviewer_1
+PYTHONPATH=src python3 -m evidence_pipeline review-queue
+PYTHONPATH=src python3 -m evidence_pipeline review-queue --format html
 PYTHONPATH=src python3 -m evidence_pipeline eval-gold tests/fixtures/gold/chat_claims.json
 PYTHONPATH=src python3 -m evidence_pipeline trace-claim claim_...
-PYTHONPATH=src python3 -m evidence_pipeline validate-artifacts
+PYTHONPATH=src python3 -m evidence_pipeline trace-claim claim_... --format html
+PYTHONPATH=src python3 -m evidence_pipeline validate-artifacts --include-reports
 ```
 
 PDF pipeline:
