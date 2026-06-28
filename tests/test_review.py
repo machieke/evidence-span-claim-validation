@@ -190,6 +190,10 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
         assert report.exit_code == 0, report.stdout
         report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
         assert "| review_queue | 1 |" in report_text
+        assert "## Review Queue By State" in report_text
+        assert "| unreviewed | 1 |" in report_text
+        assert "## Review Queue Reasons" in report_text
+        assert "| image_label_low_confidence | 1 |" in report_text
 
         html_queue = runner.invoke(app, ["review-queue", "--format", "html"])
         assert html_queue.exit_code == 0, html_queue.stdout
