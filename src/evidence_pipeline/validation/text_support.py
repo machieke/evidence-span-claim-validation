@@ -34,9 +34,35 @@ NEGATION_MARKERS = {
     "doesn't",
 }
 
+NUMBER_WORDS = {
+    "zero",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+    "eleven",
+    "twelve",
+    "thirteen",
+    "fourteen",
+    "fifteen",
+    "sixteen",
+    "seventeen",
+    "eighteen",
+    "nineteen",
+    "twenty",
+}
+
+_NUMBER_WORD_PATTERN = "|".join(sorted(NUMBER_WORDS))
 _NUMBER_DATE_RE = re.compile(
-    r"\b(?:\d+(?:\.\d+)?%?|\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{2,4}|"
-    r"\d{4}|yesterday|today|tomorrow|last week|next week)\b",
+    r"\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{2,4}|"
+    r"yesterday|today|tomorrow|last week|next week|"
+    r"\d+(?:\.\d+)?%?|" + _NUMBER_WORD_PATTERN + r")\b",
     re.IGNORECASE,
 )
 _ENTITY_RE = re.compile(r"\b[A-Z][A-Za-z0-9_-]*(?:\s+[A-Z][A-Za-z0-9_-]*)*\b")
