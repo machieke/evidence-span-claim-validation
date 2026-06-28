@@ -1,12 +1,19 @@
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from evidence_pipeline.cli import app
+from evidence_pipeline.config import PipelineConfig, load_config
 from evidence_pipeline.jsonl import append_jsonl, read_jsonl
 from evidence_pipeline.schemas.claims import RawClaimRecord
 from evidence_pipeline.schemas.sources import SourceRecord
+from evidence_pipeline.validation.privacy import (
+    PrivacyPolicyError,
+    model_invocation_privacy_decision,
+    require_model_invocation_allowed,
+)
 
 
 runner = CliRunner()
@@ -96,6 +103,48 @@ def test_check_privacy_flags_external_provider_for_sensitive_source(tmp_path: Pa
         assert trace_payload["privacy_policy_violations"][0]["violation_id"] == violations[0]["violation_id"]
 
 
+def test_model_invocation_privacy_guard_blocks_external_provider_for_sensitive_source(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        init = runner.invoke(app, ["init"])
+        assert init.exit_code == 0
+
+        append_jsonl(
+            Path("data/jsonl/sources.jsonl"),
+            SourceRecord(
+                source_id="src_sensitive",
+                source_modality="chat",
+                source_file="sensitive.json",
+                metadata={"local_only": True, "contains_pii": "yes"},
+            ),
+        )
+
+        local_decision = require_model_invocation_allowed(
+            PipelineConfig(),
+            "src_sensitive",
+            "deterministic",
+            "rules.v1",
+        )
+        assert local_decision.allowed is True
+
+        blocked = model_invocation_privacy_decision(
+            PipelineConfig(),
+            "src_sensitive",
+            "openai",
+            "external_model",
+        )
+        assert blocked.allowed is False
+        assert blocked.reason_code == "non_local_provider_for_sensitive_source"
+        assert blocked.sensitive_metadata_keys == ["contains_pii", "local_only"]
+
+        with pytest.raises(PrivacyPolicyError, match="model invocation blocked"):
+            require_model_invocation_allowed(
+                PipelineConfig(),
+                "src_sensitive",
+                "openai",
+                "external_model",
+            )
+
+
 def test_check_privacy_uses_configured_local_providers(tmp_path: Path):
     with runner.isolated_filesystem(temp_dir=tmp_path):
         init = runner.invoke(app, ["init"])
@@ -134,3 +183,11 @@ privacy:
             for _, payload in read_jsonl(Path("data/reports/privacy_policy_violations.jsonl"))
         ]
         assert violations == []
+
+        decision = require_model_invocation_allowed(
+            load_config(Path("pipeline.yaml")),
+            "src_sensitive",
+            "openai",
+            "openai_model",
+        )
+        assert decision.allowed is True
