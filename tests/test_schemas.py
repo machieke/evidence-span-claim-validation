@@ -3,7 +3,7 @@ from pydantic import ValidationError
 
 from evidence_pipeline.schemas import SCHEMA_REGISTRY
 from evidence_pipeline.schemas.evidence import EvidenceRecord
-from evidence_pipeline.schemas.reports import GraphEdgeRecord
+from evidence_pipeline.schemas.reports import GraphEdgeRecord, ModelRoutingRecord
 from evidence_pipeline.schemas.review import ReviewQueueRecord
 from evidence_pipeline.schemas.spans import SpanRecord
 
@@ -102,4 +102,50 @@ def test_graph_edge_record_requires_stable_identifiers():
             subject="speaker:alice",
             predicate="",
             object="Hope had three masts.",
+        )
+
+
+def test_model_routing_record_requires_valid_tier_role_and_score():
+    record = ModelRoutingRecord(
+        routing_id="route_1",
+        stage="extract_claims",
+        record_type="span",
+        record_id="span_1",
+        source_id="src_1",
+        source_modality="chat",
+        model_role="extraction",
+        selected_tier="strong",
+        selected_model="strong_extract",
+        reasons=["span_score_lt:0.7"],
+        score=0.5,
+    )
+
+    assert record.schema_version == "model.routing.v1"
+    assert SCHEMA_REGISTRY["model_routing"] is ModelRoutingRecord
+
+    with pytest.raises(ValidationError):
+        ModelRoutingRecord(
+            routing_id="route_2",
+            stage="extract_claims",
+            record_type="span",
+            record_id="span_1",
+            source_id="src_1",
+            source_modality="chat",
+            model_role="ranking",
+            selected_tier="strong",
+            selected_model="strong_extract",
+        )
+
+    with pytest.raises(ValidationError):
+        ModelRoutingRecord(
+            routing_id="route_3",
+            stage="extract_claims",
+            record_type="span",
+            record_id="span_1",
+            source_id="src_1",
+            source_modality="chat",
+            model_role="extraction",
+            selected_tier="strong",
+            selected_model="strong_extract",
+            score=1.5,
         )

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import Field, model_validator
 
-from evidence_pipeline.schemas.base import StrictModel
+from evidence_pipeline.schemas.base import SourceModality, StrictModel
 
 
 class GraphEdgeRecord(StrictModel):
@@ -34,4 +34,36 @@ class GraphEdgeRecord(StrictModel):
             value = getattr(self, field_name)
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"{field_name} must not be empty")
+        return self
+
+
+class ModelRoutingRecord(StrictModel):
+    routing_id: str
+    stage: str
+    record_type: str
+    record_id: str
+    source_id: str
+    source_modality: SourceModality
+    model_role: Literal["extraction", "validation"]
+    selected_tier: Literal["default", "strong"]
+    selected_model: str
+    reasons: List[str] = Field(default_factory=list)
+    score: Optional[float] = None
+    schema_version: str = "model.routing.v1"
+
+    @model_validator(mode="after")
+    def validate_route(self) -> "ModelRoutingRecord":
+        for field_name in (
+            "routing_id",
+            "stage",
+            "record_type",
+            "record_id",
+            "source_id",
+            "selected_model",
+        ):
+            value = getattr(self, field_name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{field_name} must not be empty")
+        if self.score is not None and not (0 <= self.score <= 1):
+            raise ValueError("score must be between 0 and 1")
         return self

@@ -116,6 +116,10 @@ routing:
         assert "| extraction | 2 |" in report_text
         assert "| validation | 2 |" in report_text
 
+        artifact_check = runner.invoke(app, ["validate-artifacts", "--include-reports"])
+        assert artifact_check.exit_code == 0, artifact_check.stdout
+        assert "data/reports/model_routing.jsonl: checked 4 records" in artifact_check.stdout
+
         invalid = runner.invoke(app, ["route-models", "--stage", "embedding"])
         assert invalid.exit_code != 0
         assert "model routing supports stages" in invalid.stdout

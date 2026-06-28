@@ -11,6 +11,7 @@ from evidence_pipeline.config import PipelineConfig
 from evidence_pipeline.ids import stable_id
 from evidence_pipeline.jsonl import read_jsonl_records, write_jsonl
 from evidence_pipeline.schemas.claims import RawClaimRecord
+from evidence_pipeline.schemas.reports import ModelRoutingRecord
 from evidence_pipeline.schemas.spans import SpanRecord
 
 ROUTING_STAGES = {"all", "extraction", "validation"}
@@ -76,7 +77,7 @@ def _routing_id(stage: str, record_type: str, record_id: str, selected_model: st
     )
 
 
-def _span_recommendation(span: SpanRecord, models_config: ModelsConfig) -> dict:
+def _span_recommendation(span: SpanRecord, models_config: ModelsConfig) -> ModelRoutingRecord:
     rules = models_config.routing.use_strong_extractor_if
     reasons = []
     if rules.span_score_lt is not None and span.score is not None and span.score < rules.span_score_lt:
@@ -90,23 +91,22 @@ def _span_recommendation(span: SpanRecord, models_config: ModelsConfig) -> dict:
         if selected_tier == "strong"
         else models_config.models.extraction_default
     )
-    return {
-        "routing_id": _routing_id("extract_claims", "span", span.span_id, selected_model, reasons),
-        "stage": "extract_claims",
-        "record_type": "span",
-        "record_id": span.span_id,
-        "source_id": span.source_id,
-        "source_modality": span.source_modality,
-        "model_role": "extraction",
-        "selected_tier": selected_tier,
-        "selected_model": selected_model,
-        "reasons": reasons,
-        "score": span.score,
-        "schema_version": "model.routing.v1",
-    }
+    return ModelRoutingRecord(
+        routing_id=_routing_id("extract_claims", "span", span.span_id, selected_model, reasons),
+        stage="extract_claims",
+        record_type="span",
+        record_id=span.span_id,
+        source_id=span.source_id,
+        source_modality=span.source_modality,
+        model_role="extraction",
+        selected_tier=selected_tier,
+        selected_model=selected_model,
+        reasons=reasons,
+        score=span.score,
+    )
 
 
-def _claim_recommendation(claim: RawClaimRecord, models_config: ModelsConfig) -> dict:
+def _claim_recommendation(claim: RawClaimRecord, models_config: ModelsConfig) -> ModelRoutingRecord:
     rules = models_config.routing.use_strong_validator_if
     reasons = []
     if rules.raw_claim_confidence_lt is not None and claim.confidence < rules.raw_claim_confidence_lt:
@@ -122,20 +122,19 @@ def _claim_recommendation(claim: RawClaimRecord, models_config: ModelsConfig) ->
         if selected_tier == "strong"
         else models_config.models.validation_default
     )
-    return {
-        "routing_id": _routing_id("validate_claims", "claim_raw", claim.claim_id, selected_model, reasons),
-        "stage": "validate_claims",
-        "record_type": "claim_raw",
-        "record_id": claim.claim_id,
-        "source_id": claim.source_id,
-        "source_modality": claim.source_modality,
-        "model_role": "validation",
-        "selected_tier": selected_tier,
-        "selected_model": selected_model,
-        "reasons": reasons,
-        "score": claim.confidence,
-        "schema_version": "model.routing.v1",
-    }
+    return ModelRoutingRecord(
+        routing_id=_routing_id("validate_claims", "claim_raw", claim.claim_id, selected_model, reasons),
+        stage="validate_claims",
+        record_type="claim_raw",
+        record_id=claim.claim_id,
+        source_id=claim.source_id,
+        source_modality=claim.source_modality,
+        model_role="validation",
+        selected_tier=selected_tier,
+        selected_model=selected_model,
+        reasons=reasons,
+        score=claim.confidence,
+    )
 
 
 def write_model_routing_report(
