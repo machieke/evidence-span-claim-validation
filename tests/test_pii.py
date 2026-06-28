@@ -48,9 +48,18 @@ def test_detect_pii_writes_redacted_findings_without_raw_matches(tmp_path: Path)
         assert "a***@example.com" in output_text
         assert "***-***-1212" in output_text
 
+        jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
+        assert len(jobs) == 1
+        assert jobs[0]["stage"] == "detect_pii"
+        assert jobs[0]["model_id"] == "pii.regex.v1"
+        assert jobs[0]["input_record_ids"] == ["artifact:chat_messages"]
+        assert jobs[0]["metrics"] == {"findings": 2}
+
         report = runner.invoke(app, ["report"])
         assert report.exit_code == 0, report.stdout
         report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
+        assert "| jobs | 1 |" in report_text
+        assert "| detect_pii | 1 |" in report_text
         assert "| pii_findings | 2 |" in report_text
         assert "## PII Findings By Type" in report_text
         assert "| email | 1 |" in report_text
@@ -131,9 +140,22 @@ def test_redact_pii_writes_redacted_copy_without_mutating_source(tmp_path: Path)
         assert "alice@example.com" not in manifest_text
         assert "415-555-1212" not in manifest_text
 
+        jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
+        assert len(jobs) == 1
+        assert jobs[0]["stage"] == "redact_pii"
+        assert jobs[0]["model_id"] == "pii.regex.v1"
+        assert jobs[0]["input_record_ids"] == ["artifact:chat_messages"]
+        assert jobs[0]["metrics"] == {
+            "records_written": 1,
+            "redactions": 1,
+            "replacements": 2,
+        }
+
         report = runner.invoke(app, ["report"])
         assert report.exit_code == 0, report.stdout
         report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
+        assert "| jobs | 1 |" in report_text
+        assert "| redact_pii | 1 |" in report_text
         assert "| pii_redactions | 1 |" in report_text
         assert "## PII Redactions By Artifact" in report_text
         assert "| chat_messages | 1 |" in report_text

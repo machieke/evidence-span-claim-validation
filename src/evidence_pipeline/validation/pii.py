@@ -11,6 +11,8 @@ from evidence_pipeline.ids import stable_id
 from evidence_pipeline.jsonl import read_jsonl, write_jsonl
 from evidence_pipeline.schemas.reports import PIIFindingRecord, PIIRedactionRecord
 
+PII_PROCESSOR_VERSION = "pii.regex.v1"
+
 PII_PATTERNS = {
     "email": re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE),
     "phone": re.compile(r"(?<!\d)(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}(?!\d)"),

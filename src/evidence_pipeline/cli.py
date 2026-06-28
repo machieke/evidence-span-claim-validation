@@ -59,7 +59,7 @@ from evidence_pipeline.spans.rule_highlighter import (
     detect_pdf_spans,
 )
 from evidence_pipeline.validation.deterministic import VALIDATOR_VERSION, validate_raw_claims
-from evidence_pipeline.validation.pii import detect_pii, redact_pii
+from evidence_pipeline.validation.pii import PII_PROCESSOR_VERSION, detect_pii, redact_pii
 from evidence_pipeline.validation.privacy import check_privacy_policy
 from evidence_pipeline.validation.repair import REPAIR_REASON_CODES, suggest_evidence_repairs
 from evidence_pipeline.validation.review import record_claim_review, write_review_queue
@@ -1171,6 +1171,14 @@ def detect_pii_command(
         result = detect_pii(config, artifact=artifact, output_path=output)
     except ValueError as exc:
         raise typer.BadParameter(str(exc))
+    record_job_result(
+        config,
+        stage="detect_pii",
+        input_record_ids=[f"artifact:{artifact}"],
+        model_id=PII_PROCESSOR_VERSION,
+        metrics={"findings": result.finding_count},
+        metadata={"artifact": artifact, "output_path": str(result.output_path)},
+    )
     typer.echo(f"{result.output_path} findings={result.finding_count}")
 
 
@@ -1187,6 +1195,22 @@ def redact_pii_command(
         result = redact_pii(config, artifact=artifact, output_path=output)
     except ValueError as exc:
         raise typer.BadParameter(str(exc))
+    record_job_result(
+        config,
+        stage="redact_pii",
+        input_record_ids=[f"artifact:{artifact}"],
+        model_id=PII_PROCESSOR_VERSION,
+        metrics={
+            "records_written": result.records_written,
+            "replacements": result.replacement_count,
+            "redactions": result.redaction_count,
+        },
+        metadata={
+            "artifact": artifact,
+            "output_path": str(result.output_path),
+            "manifest_path": str(result.manifest_path),
+        },
+    )
     typer.echo(
         f"{result.output_path} records={result.records_written} "
         f"replacements={result.replacement_count} redactions={result.redaction_count} "
