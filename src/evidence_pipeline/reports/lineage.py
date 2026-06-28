@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import html
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -199,4 +201,79 @@ def write_claim_trace(config: PipelineConfig, claim_id: str, output_path: Path) 
     trace = trace_claim(config, claim_id)
     ensure_parent(output_path)
     output_path.write_text(json.dumps(trace, indent=2, sort_keys=True), encoding="utf-8")
+    return trace
+
+
+def _safe_trace_filename(claim_id: str) -> str:
+    safe_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", claim_id).strip("._")
+    return f"{safe_id or 'claim'}.trace.html"
+
+
+def default_claim_trace_html_path(config: PipelineConfig, claim_id: str) -> Path:
+    return config.paths.reports_dir / _safe_trace_filename(claim_id)
+
+
+def _trace_section(title: str, payload: object) -> str:
+    return "\n".join(
+        [
+            f"<h2>{html.escape(title)}</h2>",
+            "<pre>",
+            html.escape(json.dumps(payload, indent=2, sort_keys=True)),
+            "</pre>",
+        ]
+    )
+
+
+def render_claim_trace_html(trace: Dict[str, Any]) -> str:
+    sections = [
+        ("Source", trace.get("source")),
+        ("Evidence", trace.get("evidence")),
+        ("Span", trace.get("span")),
+        ("Raw Claim", trace.get("raw_claim")),
+        ("Validations", trace.get("validations")),
+        ("Validated Claim", trace.get("validated_claim")),
+        ("Normalized Claims", trace.get("normalized_claims")),
+        ("Jobs", trace.get("jobs")),
+        ("Model Routing", trace.get("model_routing")),
+        ("Review Decisions", trace.get("review_decisions")),
+        ("Audit Events", trace.get("audit_events")),
+        ("Graph Edges", trace.get("graph_edges")),
+        ("Repair Suggestions", trace.get("repair_suggestions")),
+        ("Duplicate Groups", trace.get("duplicate_groups")),
+        ("PII Findings", trace.get("pii_findings")),
+        ("PII Redactions", trace.get("pii_redactions")),
+        ("Privacy Policy Violations", trace.get("privacy_policy_violations")),
+        ("Retention Plan", trace.get("retention_plan")),
+        ("Quarantine", trace.get("quarantine")),
+    ]
+    body = [
+        f"<h1>Claim Trace: {html.escape(str(trace.get('claim_id')))}</h1>",
+        f"<p>Found: {html.escape(str(trace.get('found')))}</p>",
+    ]
+    body.extend(_trace_section(title, payload) for title, payload in sections)
+    return "\n".join(
+        [
+            "<!doctype html>",
+            '<html lang="en">',
+            "<head>",
+            '<meta charset="utf-8">',
+            f"<title>Claim Trace: {html.escape(str(trace.get('claim_id')))}</title>",
+            "<style>",
+            "body{font-family:Arial,sans-serif;line-height:1.45;margin:2rem;max-width:1100px;}",
+            "pre{background:#f6f8fa;border:1px solid #d0d7de;padding:0.75rem;overflow:auto;}",
+            "</style>",
+            "</head>",
+            "<body>",
+            *body,
+            "</body>",
+            "</html>",
+            "",
+        ]
+    )
+
+
+def write_claim_trace_html(config: PipelineConfig, claim_id: str, output_path: Path) -> Dict[str, Any]:
+    trace = trace_claim(config, claim_id)
+    ensure_parent(output_path)
+    output_path.write_text(render_claim_trace_html(trace), encoding="utf-8")
     return trace

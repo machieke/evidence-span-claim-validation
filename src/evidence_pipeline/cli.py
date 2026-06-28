@@ -39,7 +39,12 @@ from evidence_pipeline.normalization.metta_export import export_metta
 from evidence_pipeline.retention import write_retention_plan
 from evidence_pipeline.reports.summary import write_summary_report
 from evidence_pipeline.reports.gold_eval import write_gold_eval_report
-from evidence_pipeline.reports.lineage import trace_claim, write_claim_trace
+from evidence_pipeline.reports.lineage import (
+    default_claim_trace_html_path,
+    trace_claim,
+    write_claim_trace,
+    write_claim_trace_html,
+)
 from evidence_pipeline.reports.sqlite_export import export_sqlite
 from evidence_pipeline.schemas import SCHEMA_REGISTRY, EvidenceRecord, SourceModality, SourceRecord
 from evidence_pipeline.spans.image_region_clusterer import (
@@ -986,11 +991,20 @@ def eval_gold_command(
 def trace_claim_command(
     claim_id: str = typer.Argument(..., help="Claim ID to trace."),
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="Optional JSON output path."),
+    format: str = typer.Option("json", "--format", help="Trace format: json or html."),
     config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
 ) -> None:
     """Trace a claim back through source, evidence, span, validation, and normalization artifacts."""
     config = load_config(config_path)
     _init_paths(config)
+    normalized_format = format.strip().lower()
+    if normalized_format not in {"json", "html"}:
+        raise typer.BadParameter("trace format must be json or html")
+    if normalized_format == "html":
+        output_path = output or default_claim_trace_html_path(config, claim_id)
+        trace = write_claim_trace_html(config, claim_id, output_path)
+        typer.echo(f"{output_path} found={trace['found']}")
+        return
     if output is not None:
         trace = write_claim_trace(config, claim_id, output)
         typer.echo(f"{output} found={trace['found']}")

@@ -94,6 +94,14 @@ def test_review_claim_records_idempotent_decision_and_trace(tmp_path: Path):
         assert trace_payload["review_decisions"][0]["review_id"] == reviews[0]["review_id"]
         assert [event["status"] for event in trace_payload["audit_events"]] == ["created", "skipped"]
 
+        html_trace = runner.invoke(app, ["trace-claim", "claim_img_label_1", "--format", "html"])
+        assert html_trace.exit_code == 0, html_trace.stdout
+        assert "data/reports/claim_img_label_1.trace.html" in html_trace.stdout
+        html_trace_text = Path("data/reports/claim_img_label_1.trace.html").read_text(encoding="utf-8")
+        assert "<h1>Claim Trace: claim_img_label_1</h1>" in html_trace_text
+        assert "<h2>Review Decisions</h2>" in html_trace_text
+        assert "human_confirmed_label" in html_trace_text
+
         report = runner.invoke(app, ["report"])
         assert report.exit_code == 0, report.stdout
         report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
@@ -108,3 +116,7 @@ def test_review_claim_records_idempotent_decision_and_trace(tmp_path: Path):
         invalid = runner.invoke(app, ["review-claim", "claim_img_label_1", "--decision", "maybe"])
         assert invalid.exit_code != 0
         assert "review decision must be one of" in invalid.stdout
+
+        invalid_trace = runner.invoke(app, ["trace-claim", "claim_img_label_1", "--format", "xml"])
+        assert invalid_trace.exit_code != 0
+        assert "trace format must be json or html" in invalid_trace.stdout
