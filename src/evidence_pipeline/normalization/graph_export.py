@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Optional
 
 from evidence_pipeline.config import PipelineConfig
 from evidence_pipeline.ids import stable_id
 from evidence_pipeline.jsonl import read_jsonl_records, write_jsonl
 from evidence_pipeline.schemas.claims import NormalizedClaimRecord
+from evidence_pipeline.schemas.reports import GraphEdgeRecord
 
 
 @dataclass
@@ -16,7 +17,7 @@ class GraphExportResult:
     edge_count: int
 
 
-def _edge_from_normalized_claim(record: NormalizedClaimRecord) -> Dict[str, object]:
+def _edge_from_normalized_claim(record: NormalizedClaimRecord) -> GraphEdgeRecord:
     normalized = record.normalized_claim
     subject = normalized.get("subject")
     predicate = normalized.get("predicate")
@@ -32,20 +33,19 @@ def _edge_from_normalized_claim(record: NormalizedClaimRecord) -> Dict[str, obje
             "object": object_value,
         },
     )
-    return {
-        "edge_id": edge_id,
-        "normalized_claim_id": record.normalized_claim_id,
-        "claim_id": record.claim_id,
-        "source_id": record.source_id,
-        "evidence_id": record.evidence_id,
-        "subject": subject,
-        "predicate": predicate,
-        "object": object_value,
-        "truth_status": qualifiers.get("truth_status"),
-        "attribution": qualifiers.get("attribution"),
-        "qualifiers": qualifiers,
-        "schema_version": "graph.edge.v1",
-    }
+    return GraphEdgeRecord(
+        edge_id=edge_id,
+        normalized_claim_id=record.normalized_claim_id,
+        claim_id=record.claim_id,
+        source_id=record.source_id,
+        evidence_id=record.evidence_id,
+        subject=subject,
+        predicate=predicate if isinstance(predicate, str) else "",
+        object=object_value,
+        truth_status=qualifiers.get("truth_status"),
+        attribution=qualifiers.get("attribution"),
+        qualifiers=qualifiers,
+    )
 
 
 def export_graph_jsonl(config: PipelineConfig, output_path: Optional[Path] = None) -> GraphExportResult:

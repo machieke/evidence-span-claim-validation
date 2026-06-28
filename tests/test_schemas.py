@@ -3,6 +3,7 @@ from pydantic import ValidationError
 
 from evidence_pipeline.schemas import SCHEMA_REGISTRY
 from evidence_pipeline.schemas.evidence import EvidenceRecord
+from evidence_pipeline.schemas.reports import GraphEdgeRecord
 from evidence_pipeline.schemas.review import ReviewQueueRecord
 from evidence_pipeline.schemas.spans import SpanRecord
 
@@ -73,4 +74,32 @@ def test_review_queue_record_requires_valid_state_and_claim_id():
             claim_id="claim_3",
             validation_status="quarantined",
             review_state="unreviewed",
+        )
+
+
+def test_graph_edge_record_requires_stable_identifiers():
+    record = GraphEdgeRecord(
+        edge_id="edge_1",
+        normalized_claim_id="nclaim_1",
+        claim_id="claim_1",
+        source_id="src_1",
+        evidence_id="ev_1",
+        subject="speaker:alice",
+        predicate="asserts",
+        object="Hope had three masts.",
+    )
+
+    assert record.schema_version == "graph.edge.v1"
+    assert SCHEMA_REGISTRY["claim_graph"] is GraphEdgeRecord
+
+    with pytest.raises(ValidationError):
+        GraphEdgeRecord(
+            edge_id="edge_2",
+            normalized_claim_id="nclaim_1",
+            claim_id="claim_1",
+            source_id="src_1",
+            evidence_id="ev_1",
+            subject="speaker:alice",
+            predicate="",
+            object="Hope had three masts.",
         )

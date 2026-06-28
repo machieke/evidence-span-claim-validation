@@ -14,6 +14,7 @@ from evidence_pipeline.schemas.image import (
 from evidence_pipeline.schemas.jobs import JobRecord
 from evidence_pipeline.schemas.pdf import PDFBlockRecord
 from evidence_pipeline.schemas.review import ReviewDecisionRecord, ReviewQueueRecord
+from evidence_pipeline.schemas.reports import GraphEdgeRecord
 from evidence_pipeline.schemas.sources import SourceRecord
 from evidence_pipeline.schemas.spans import SpanRecord
 from evidence_pipeline.schemas.validation import ErrorRecord, QuarantineRecord, ValidationRecord
@@ -68,6 +69,9 @@ SCHEMA_REGISTRY = {
     "validation": ValidationRecord,
     "validations": ValidationRecord,
     "quarantine": QuarantineRecord,
+    "graph_edge": GraphEdgeRecord,
+    "graph-edge": GraphEdgeRecord,
+    "claim_graph": GraphEdgeRecord,
     "error": ErrorRecord,
     "errors": ErrorRecord,
 }
@@ -79,6 +83,7 @@ __all__ = [
     "AuditEventRecord",
     "ErrorRecord",
     "EvidenceRecord",
+    "GraphEdgeRecord",
     "ImageFeatureClusterRecord",
     "ImageRecord",
     "ImageRegionEmbeddingRecord",

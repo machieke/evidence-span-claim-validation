@@ -1237,6 +1237,7 @@ def validate_artifacts(
         "quarantine": "quarantine",
     }
     report_schema_by_key = {
+        "claim_graph": "claim_graph",
         "review_queue": "review_queue",
     }
     failures = 0

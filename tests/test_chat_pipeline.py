@@ -156,5 +156,6 @@ def test_chat_pipeline_is_idempotent(tmp_path: Path):
         assert "## Entity Resolution Bases" in report_text
         assert "| attribution_agent | 3 |" in report_text
 
-        validate = runner.invoke(app, ["validate-artifacts"])
+        validate = runner.invoke(app, ["validate-artifacts", "--include-reports"])
         assert validate.exit_code == 0, validate.stdout
+        assert "data/reports/claim_graph.jsonl: checked 3 records" in validate.stdout
