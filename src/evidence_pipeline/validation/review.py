@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import json
+import shlex
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -100,6 +101,30 @@ def _is_reviewable_claim(claim: dict, validation: Optional[dict]) -> bool:
     return _reviewable_without_validation(claim)
 
 
+def _review_command(claim_id: str, decision: str, reason_codes: List[str]) -> str:
+    args = [
+        "python3",
+        "-m",
+        "evidence_pipeline",
+        "review-claim",
+        claim_id,
+        "--decision",
+        decision,
+        "--reviewer-id",
+        "human_reviewer",
+    ]
+    for reason_code in reason_codes:
+        args.extend(["--reason-code", reason_code])
+    return " ".join(shlex.quote(str(arg)) for arg in args)
+
+
+def _review_commands(claim_id: str, reason_codes: List[str]) -> Dict[str, str]:
+    return {
+        decision: _review_command(claim_id, decision, reason_codes)
+        for decision in ("accept", "reject", "needs_review")
+    }
+
+
 def _review_queue_item(
     claim: dict,
     validation: Optional[dict],
@@ -112,6 +137,7 @@ def _review_queue_item(
     claim_risk_flags = claim.get("risk_flags", [])
     validation_errors = validation.get("errors", []) if validation else []
     validation_warnings = validation.get("warnings", []) if validation else []
+    claim_id = str(claim.get("claim_id"))
     record = ReviewQueueRecord(
         review_queue_id=stable_id(
             "reviewq",
@@ -121,7 +147,7 @@ def _review_queue_item(
                 "review_id": latest_review.review_id if latest_review else None,
             },
         ),
-        claim_id=str(claim.get("claim_id")),
+        claim_id=claim_id,
         source_id=claim.get("source_id"),
         evidence_id=claim.get("evidence_id"),
         source_file=source.get("source_file") if source else None,
@@ -140,6 +166,7 @@ def _review_queue_item(
         warnings=validation_warnings,
         risk_flags=sorted(set(claim_risk_flags) | set(evidence_risk_flags)),
         review_state=latest_review.decision if latest_review else "unreviewed",
+        review_commands=_review_commands(claim_id, validation_errors),
         latest_review=latest_review.model_dump(mode="json") if latest_review else None,
     )
     return record.model_dump(mode="json", exclude_none=True)
@@ -194,16 +221,30 @@ def _review_controls(item: dict) -> str:
     )
 
 
+def _review_command_block(item: dict) -> str:
+    commands = item.get("review_commands") or {}
+    lines = [
+        f"{decision}: {command}"
+        for decision, command in commands.items()
+        if command
+    ]
+    if not lines:
+        return ""
+    return f'<pre class="review-commands">{html.escape(chr(10).join(lines))}</pre>'
+
+
 def render_review_queue_html(queue_items: List[dict]) -> str:
     rows = []
     for item in queue_items:
         details = json.dumps(item, indent=2, sort_keys=True)
         normalized = _format_json_cell(item.get("normalized_claims"))
         controls = _review_controls(item)
+        command_block = _review_command_block(item)
         rows.append(
             "<tr>"
             f"<td>{html.escape(_format_cell(item.get('review_state')))}</td>"
             f"<td>{controls}</td>"
+            f"<td>{command_block}</td>"
             f"<td>{html.escape(_format_cell(item.get('validation_status')))}</td>"
             f"<td>{html.escape(_format_cell(item.get('reason_codes')))}</td>"
             f"<td>{html.escape(_format_cell(item.get('source_file')))}</td>"
@@ -223,6 +264,7 @@ def render_review_queue_html(queue_items: List[dict]) -> str:
         "<thead><tr>"
         "<th>Review</th>"
         "<th>Action</th>"
+        "<th>Commands</th>"
         "<th>Validation</th>"
         "<th>Reasons</th>"
         "<th>Source</th>"
@@ -253,6 +295,7 @@ def render_review_queue_html(queue_items: List[dict]) -> str:
             ".review-actions select,.review-actions input,.review-actions textarea{font:inherit;max-width:100%;}",
             ".action-buttons{display:flex;gap:0.35rem;flex-wrap:wrap;}",
             ".action-buttons button{font:inherit;padding:0.25rem 0.45rem;}",
+            ".review-commands{max-width:32rem;}",
             "</style>",
             "</head>",
             "<body>",

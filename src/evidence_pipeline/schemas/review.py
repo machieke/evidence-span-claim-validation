@@ -54,6 +54,7 @@ class ReviewQueueRecord(StrictModel):
     warnings: List[str] = Field(default_factory=list)
     risk_flags: List[str] = Field(default_factory=list)
     review_state: ReviewQueueState
+    review_commands: Dict[ReviewDecision, str] = Field(default_factory=dict)
     latest_review: Optional[Dict[str, Any]] = None
     schema_version: str = "review.queue.v1"
 

@@ -254,6 +254,16 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
         assert items[0]["review_state"] == "unreviewed"
         assert items[0]["evidence"]["provenance"]["bbox"] == [0, 0, 16, 16]
         assert items[0]["normalized_claims"][0]["normalized_claim"]["predicate"] == "classified_as"
+        assert (
+            items[0]["review_commands"]["accept"]
+            == "python3 -m evidence_pipeline review-claim claim_img_label_1 --decision accept "
+            "--reviewer-id human_reviewer --reason-code image_label_low_confidence"
+        )
+        assert "review-claim claim_img_label_1 --decision reject" in items[0]["review_commands"]["reject"]
+        assert (
+            "--reason-code image_label_low_confidence"
+            in items[0]["review_commands"]["needs_review"]
+        )
 
         jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
         assert [job["stage"] for job in jobs] == ["validate_claims", "review_queue"]
@@ -273,6 +283,10 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
         trace_payload = json.loads(trace.stdout)
         assert trace_payload["review_queue"][0]["review_queue_id"] == items[0]["review_queue_id"]
         assert trace_payload["review_queue"][0]["normalized_claims"][0]["normalized_claim"]["object"] == "red"
+        assert (
+            trace_payload["review_queue"][0]["review_commands"]["accept"]
+            == items[0]["review_commands"]["accept"]
+        )
 
         report = runner.invoke(app, ["report"])
         assert report.exit_code == 0, report.stdout
@@ -303,6 +317,8 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
         assert 'data-decision="accept"' in html_text
         assert 'data-decision="reject"' in html_text
         assert 'data-decision="needs_review"' in html_text
+        assert "review-claim claim_img_label_1 --decision accept" in html_text
+        assert "--reason-code image_label_low_confidence" in html_text
         assert "Model classifier_v1 classified region region_1 as red." in html_text
 
         html_trace = runner.invoke(app, ["trace-claim", "claim_img_label_1", "--format", "html"])

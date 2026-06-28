@@ -69,6 +69,7 @@ def test_review_queue_record_requires_valid_state_and_claim_id():
 
     assert record.schema_version == "review.queue.v1"
     assert SCHEMA_REGISTRY["review_queue"] is ReviewQueueRecord
+    assert record.review_commands == {}
 
     with pytest.raises(ValidationError):
         ReviewQueueRecord(
