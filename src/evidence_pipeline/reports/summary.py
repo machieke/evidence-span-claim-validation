@@ -207,6 +207,25 @@ def _has_validation_reason(row: dict, reason_code: str) -> bool:
     return reason_code in row.get("errors", []) or reason_code in row.get("warnings", [])
 
 
+def _validation_flag_rate(rows: Iterable[dict], flag: str) -> str:
+    total = 0
+    preserved = 0
+    for row in rows:
+        metadata = row.get("metadata") or {}
+        if not isinstance(metadata, dict):
+            continue
+        validation = metadata.get("validation") or {}
+        if not isinstance(validation, dict):
+            continue
+        value = validation.get(flag)
+        if not isinstance(value, bool):
+            continue
+        total += 1
+        if value:
+            preserved += 1
+    return _rate(preserved, total)
+
+
 def _quality_rows(
     claims_raw: List[dict],
     validations: List[dict],
@@ -233,6 +252,10 @@ def _quality_rows(
         ("Accepted text claim exact-evidence rate", _rate(exact_matches, text_validated)),
         ("Raw claim quarantine rate", _rate(len(quarantine), len(claims_raw))),
         ("Unsupported entity validation rate", _rate(unsupported_entities, len(validations))),
+        ("Negation preservation rate", _validation_flag_rate(validations, "negation_preserved")),
+        ("Uncertainty preservation rate", _validation_flag_rate(validations, "uncertainty_preserved")),
+        ("Attribution preservation rate", _validation_flag_rate(validations, "attribution_preserved")),
+        ("Quantity preservation rate", _validation_flag_rate(validations, "quantities_preserved")),
         ("Evidence repair suggestion rate", _rate(len(repair_suggestions), len(claims_raw))),
         ("Accepted claims", len(claims_validated)),
         ("Quarantined claims", len(quarantine)),

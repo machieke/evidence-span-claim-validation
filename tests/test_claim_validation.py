@@ -247,3 +247,11 @@ def test_validate_claims_quarantines_quantity_word_mismatch(tmp_path: Path):
         assert validations[0]["errors"] == ["quantity_mismatch"]
         assert validations[0]["metadata"]["validation"]["quantities_preserved"] is False
         assert quarantined[0]["reason_codes"] == ["quantity_mismatch"]
+
+        report = runner.invoke(app, ["report"])
+        assert report.exit_code == 0, report.stdout
+        report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
+        assert "| Quantity preservation rate | 0.0% |" in report_text
+        assert "| Attribution preservation rate | 100.0% |" in report_text
+        assert "| Negation preservation rate | 100.0% |" in report_text
+        assert "| Uncertainty preservation rate | 100.0% |" in report_text
