@@ -226,6 +226,33 @@ def _validation_flag_rate(rows: Iterable[dict], flag: str) -> str:
     return _rate(preserved, total)
 
 
+def _review_disagreement_rate(rows: Iterable[dict]) -> str:
+    latest_by_claim_and_reviewer: Dict[str, Dict[str, Tuple[str, str]]] = {}
+    for row in rows:
+        claim_id = row.get("claim_id")
+        reviewer_id = row.get("reviewer_id")
+        decision = row.get("decision")
+        if not isinstance(claim_id, str) or not isinstance(reviewer_id, str) or not isinstance(decision, str):
+            continue
+        reviewed_at = str(row.get("reviewed_at") or "")
+        reviewer_decisions = latest_by_claim_and_reviewer.setdefault(claim_id, {})
+        previous = reviewer_decisions.get(reviewer_id)
+        if previous is None or reviewed_at >= previous[0]:
+            reviewer_decisions[reviewer_id] = (reviewed_at, decision)
+
+    multi_reviewer_claims = [
+        reviewer_decisions
+        for reviewer_decisions in latest_by_claim_and_reviewer.values()
+        if len(reviewer_decisions) >= 2
+    ]
+    disagreements = sum(
+        1
+        for reviewer_decisions in multi_reviewer_claims
+        if len({decision for _, decision in reviewer_decisions.values()}) > 1
+    )
+    return _rate(disagreements, len(multi_reviewer_claims))
+
+
 def _quality_rows(
     claims_raw: List[dict],
     validations: List[dict],
@@ -233,6 +260,7 @@ def _quality_rows(
     quarantine: List[dict],
     repair_suggestions: List[dict],
     gold_evaluations: List[dict],
+    review_decisions: List[dict],
 ) -> List[Tuple[str, object]]:
     exact_matches = 0
     text_validated = 0
@@ -256,6 +284,7 @@ def _quality_rows(
         ("Uncertainty preservation rate", _validation_flag_rate(validations, "uncertainty_preserved")),
         ("Attribution preservation rate", _validation_flag_rate(validations, "attribution_preserved")),
         ("Quantity preservation rate", _validation_flag_rate(validations, "quantities_preserved")),
+        ("Review disagreement rate", _review_disagreement_rate(review_decisions)),
         ("Evidence repair suggestion rate", _rate(len(repair_suggestions), len(claims_raw))),
         ("Accepted claims", len(claims_validated)),
         ("Quarantined claims", len(quarantine)),
@@ -419,6 +448,7 @@ def render_summary_markdown(config: PipelineConfig) -> Tuple[str, Dict[str, int]
                 artifacts["quarantine"],
                 artifacts["claim_repairs"],
                 artifacts["gold_eval"],
+                artifacts["review_decisions"],
             ),
         )
     )

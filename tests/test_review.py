@@ -123,6 +123,61 @@ def test_review_claim_records_idempotent_decision_and_trace(tmp_path: Path):
         assert "trace format must be json or html" in invalid_trace.stdout
 
 
+def test_report_tracks_review_disagreement_rate(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        init = runner.invoke(app, ["init"])
+        assert init.exit_code == 0
+
+        append_jsonl(
+            Path("data/jsonl/claims.raw.jsonl"),
+            RawClaimRecord(
+                claim_id="claim_img_label_1",
+                source_id="src_img_1",
+                source_modality="image",
+                evidence_id="ev_img_1",
+                claim_type="named_visual_classification",
+                source_faithful_claim="Model classifier_v1 classified region region_1 as red.",
+                subject="region_1",
+                predicate="classified_as",
+                object="red",
+                modality="model_observation",
+                attribution={"type": "model", "agent": "classifier_v1"},
+                truth_status="model_observation_unverified",
+                confidence=0.9,
+            ),
+        )
+
+        accept = runner.invoke(
+            app,
+            [
+                "review-claim",
+                "claim_img_label_1",
+                "--decision",
+                "accept",
+                "--reviewer-id",
+                "reviewer_1",
+            ],
+        )
+        reject = runner.invoke(
+            app,
+            [
+                "review-claim",
+                "claim_img_label_1",
+                "--decision",
+                "reject",
+                "--reviewer-id",
+                "reviewer_2",
+            ],
+        )
+        assert accept.exit_code == 0, accept.stdout
+        assert reject.exit_code == 0, reject.stdout
+
+        report = runner.invoke(app, ["report"])
+        assert report.exit_code == 0, report.stdout
+        report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
+        assert "| Review disagreement rate | 100.0% |" in report_text
+
+
 def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
     with runner.isolated_filesystem(temp_dir=tmp_path):
         init = runner.invoke(app, ["init"])
