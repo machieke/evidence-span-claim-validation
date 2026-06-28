@@ -66,7 +66,7 @@ from evidence_pipeline.validation.repair import (
     REPAIR_SUGGESTION_VERSION,
     suggest_evidence_repairs,
 )
-from evidence_pipeline.validation.review import record_claim_review, write_review_queue
+from evidence_pipeline.validation.review import REVIEW_QUEUE_VERSION, record_claim_review, write_review_queue
 from evidence_pipeline.validation.schema_repair import SCHEMA_REPAIR_VERSION, import_raw_claim_candidates
 
 app = typer.Typer(help="Evidence-span claim validation pipeline.")
@@ -1174,6 +1174,24 @@ def review_queue_command(
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc))
+    record_job_result(
+        config,
+        stage="review_queue",
+        input_record_ids=[
+            "claims_raw",
+            f"format:{format}",
+            f"include_reviewed:{include_reviewed}",
+            "review_decisions",
+            "validations",
+        ],
+        model_id=REVIEW_QUEUE_VERSION,
+        metrics={"review_items": result.item_count},
+        metadata={
+            "format": format,
+            "include_reviewed": include_reviewed,
+            "output_path": str(result.output_path),
+        },
+    )
     typer.echo(f"{result.output_path} review_items={result.item_count}")
 
 

@@ -22,6 +22,7 @@ from evidence_pipeline.schemas.review import ReviewDecisionRecord, ReviewQueueRe
 
 REVIEW_DECISIONS = {"accept", "reject", "needs_review"}
 REVIEW_QUEUE_FORMATS = {"jsonl", "html"}
+REVIEW_QUEUE_VERSION = "review.queue.v1"
 
 
 @dataclass

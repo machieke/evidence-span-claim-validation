@@ -236,6 +236,18 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
         assert items[0]["review_state"] == "unreviewed"
         assert items[0]["evidence"]["provenance"]["bbox"] == [0, 0, 16, 16]
 
+        jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
+        assert [job["stage"] for job in jobs] == ["validate_claims", "review_queue"]
+        assert jobs[1]["model_id"] == "review.queue.v1"
+        assert jobs[1]["input_record_ids"] == [
+            "claims_raw",
+            "format:jsonl",
+            "include_reviewed:False",
+            "review_decisions",
+            "validations",
+        ]
+        assert jobs[1]["metrics"] == {"review_items": 1}
+
         trace = runner.invoke(app, ["trace-claim", "claim_img_label_1"])
         assert trace.exit_code == 0, trace.stdout
         trace_payload = json.loads(trace.stdout)
@@ -244,6 +256,8 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
         report = runner.invoke(app, ["report"])
         assert report.exit_code == 0, report.stdout
         report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
+        assert "| jobs | 2 |" in report_text
+        assert "## Jobs By Stage" in report_text
         assert "| review_queue | 1 |" in report_text
         assert "## Review Queue By State" in report_text
         assert "| unreviewed | 1 |" in report_text
