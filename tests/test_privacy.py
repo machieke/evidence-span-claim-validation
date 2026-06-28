@@ -97,10 +97,23 @@ def test_check_privacy_flags_external_provider_for_sensitive_source(tmp_path: Pa
         assert jobs[0]["input_record_ids"] == ["claims_raw", "sources"]
         assert jobs[0]["metrics"] == {"claims_checked": 3, "violations": 1}
 
+        audit_path = Path("data/jsonl/audit_events.jsonl")
+        audit_text = audit_path.read_text(encoding="utf-8")
+        audit_events = [payload for _, payload in read_jsonl(audit_path)]
+        assert len(audit_events) == 1
+        assert audit_events[0]["action"] == "check_privacy"
+        assert audit_events[0]["target_type"] == "privacy_policy_violation"
+        assert audit_events[0]["target_id"] == violations[0]["violation_id"]
+        assert audit_events[0]["claim_id"] == "claim_external"
+        assert audit_events[0]["details"]["reason_code"] == "non_local_provider_for_sensitive_source"
+        assert "Call Alice at 415-555-1212." not in audit_text
+        assert "415-555-1212" not in audit_text
+
         report = runner.invoke(app, ["report"])
         assert report.exit_code == 0, report.stdout
         report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
         assert "| jobs | 1 |" in report_text
+        assert "| audit_events | 1 |" in report_text
         assert "| check_privacy | 1 |" in report_text
         assert "| privacy_policy_violations | 1 |" in report_text
         assert "## Privacy Policy Violations" in report_text
@@ -110,6 +123,7 @@ def test_check_privacy_flags_external_provider_for_sensitive_source(tmp_path: Pa
         assert trace.exit_code == 0, trace.stdout
         trace_payload = json.loads(trace.stdout)
         assert trace_payload["privacy_policy_violations"][0]["violation_id"] == violations[0]["violation_id"]
+        assert trace_payload["audit_events"][0]["target_id"] == violations[0]["violation_id"]
 
         artifact_check = runner.invoke(app, ["validate-artifacts", "--include-reports"])
         assert artifact_check.exit_code == 0, artifact_check.stdout

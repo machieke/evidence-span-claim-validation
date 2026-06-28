@@ -6,7 +6,8 @@ from typing import Dict, List, Optional, Set
 
 from evidence_pipeline.config import PipelineConfig
 from evidence_pipeline.ids import stable_id
-from evidence_pipeline.jsonl import read_jsonl_records, write_jsonl
+from evidence_pipeline.jsonl import append_jsonl, existing_values, read_jsonl_records, write_jsonl
+from evidence_pipeline.schemas.audit import AuditEventRecord
 from evidence_pipeline.schemas.claims import RawClaimRecord
 from evidence_pipeline.schemas.reports import PrivacyPolicyViolationRecord
 from evidence_pipeline.schemas.sources import SourceRecord
@@ -153,6 +154,50 @@ def _violation(claim: RawClaimRecord, sensitive_keys: List[str]) -> dict:
     ).model_dump(mode="json")
 
 
+def _audit_event_id(violation_id: str, output_path: Path) -> str:
+    return stable_id(
+        "audit",
+        {
+            "action": "check_privacy",
+            "violation_id": violation_id,
+            "output_path": str(output_path),
+            "check_version": PRIVACY_CHECK_VERSION,
+        },
+    )
+
+
+def _audit_privacy_violations(config: PipelineConfig, violations: List[dict], output_path: Path) -> None:
+    existing_audit_ids = existing_values(config.jsonl_paths()["audit_events"], "audit_event_id")
+    for violation in violations:
+        audit_event_id = _audit_event_id(str(violation["violation_id"]), output_path)
+        if audit_event_id in existing_audit_ids:
+            continue
+        append_jsonl(
+            config.jsonl_paths()["audit_events"],
+            AuditEventRecord(
+                audit_event_id=audit_event_id,
+                action="check_privacy",
+                actor_id="system",
+                target_type="privacy_policy_violation",
+                target_id=str(violation["violation_id"]),
+                source_id=violation.get("source_id"),
+                evidence_id=violation.get("evidence_id"),
+                claim_id=violation.get("claim_id"),
+                status="created",
+                details={
+                    "provider": violation["provider"],
+                    "model": violation["model"],
+                    "policy": violation["policy"],
+                    "reason_code": violation["reason_code"],
+                    "sensitive_metadata_keys": violation["sensitive_metadata_keys"],
+                    "output_path": str(output_path),
+                    "check_version": PRIVACY_CHECK_VERSION,
+                },
+            ),
+        )
+        existing_audit_ids.add(audit_event_id)
+
+
 def check_privacy_policy(config: PipelineConfig, output_path: Optional[Path] = None) -> PrivacyCheckResult:
     if output_path is None:
         output_path = config.paths.reports_dir / "privacy_policy_violations.jsonl"
@@ -181,6 +226,7 @@ def check_privacy_policy(config: PipelineConfig, output_path: Optional[Path] = N
         violations.append(violation)
 
     write_jsonl(output_path, violations)
+    _audit_privacy_violations(config, violations, output_path)
     return PrivacyCheckResult(
         output_path=output_path,
         claims_checked=claims_checked,

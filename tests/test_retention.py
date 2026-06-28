@@ -58,7 +58,9 @@ def test_retention_plan_reports_old_raw_sources_without_deleting(tmp_path: Path)
         )
 
         result = runner.invoke(app, ["retention-plan"])
+        second = runner.invoke(app, ["retention-plan"])
         assert result.exit_code == 0, result.stdout
+        assert second.exit_code == 0, second.stdout
         assert "candidates=1" in result.stdout
 
         output_path = Path("data/reports/retention_plan.jsonl")
@@ -78,12 +80,23 @@ def test_retention_plan_reports_old_raw_sources_without_deleting(tmp_path: Path)
         assert jobs[0]["input_record_ids"] == ["sources"]
         assert jobs[0]["metrics"] == {"candidates": 1}
 
+        audit_events = [payload for _, payload in read_jsonl(Path("data/jsonl/audit_events.jsonl"))]
+        assert len(audit_events) == 1
+        assert audit_events[0]["action"] == "retention_plan"
+        assert audit_events[0]["target_type"] == "retention_candidate"
+        assert audit_events[0]["target_id"] == candidates[0]["retention_id"]
+        assert audit_events[0]["source_id"] == "src_old"
+        assert audit_events[0]["details"]["reason_code"] == "raw_source_retention_exceeded"
+        assert audit_events[0]["details"]["dry_run"] is True
+
         report = runner.invoke(app, ["report"])
         assert report.exit_code == 0, report.stdout
         report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
         assert "| jobs | 1 |" in report_text
+        assert "| audit_events | 1 |" in report_text
         assert "## Jobs By Stage" in report_text
         assert "| retention_plan | 1 |" in report_text
+        assert "## Audit Events" in report_text
         assert "## Retention Plan Reasons" in report_text
         assert "| raw_source_retention_exceeded | 1 |" in report_text
 
