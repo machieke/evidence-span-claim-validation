@@ -181,6 +181,11 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
         assert items[0]["review_state"] == "unreviewed"
         assert items[0]["evidence"]["provenance"]["bbox"] == [0, 0, 16, 16]
 
+        report = runner.invoke(app, ["report"])
+        assert report.exit_code == 0, report.stdout
+        report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
+        assert "| review_queue | 1 |" in report_text
+
         html_queue = runner.invoke(app, ["review-queue", "--format", "html"])
         assert html_queue.exit_code == 0, html_queue.stdout
         assert "data/reports/review_queue.html review_items=1" in html_queue.stdout
