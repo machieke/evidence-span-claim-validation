@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import shlex
 from dataclasses import dataclass
 from datetime import datetime
@@ -330,7 +331,96 @@ def _evidence_anchor_block(item: dict) -> str:
     return '<dl class="evidence-anchor">' + "".join(rows) + "</dl>"
 
 
-def render_review_queue_html(queue_items: List[dict]) -> str:
+def _asset_href(path_value: object, base_path: Optional[Path]) -> str:
+    if path_value is None:
+        return ""
+    path_text = str(path_value).strip()
+    if not path_text:
+        return ""
+    if path_text.startswith(("http://", "https://", "data:")):
+        return path_text
+    path = Path(path_text)
+    if base_path is not None and path.is_absolute() == base_path.is_absolute():
+        return Path(os.path.relpath(path, base_path)).as_posix()
+    return path.as_posix()
+
+
+def _first_present(anchor: dict, keys: List[str]) -> object:
+    for key in keys:
+        value = anchor.get(key)
+        if value is not None:
+            return value
+    return None
+
+
+def _time_fragment(anchor: dict) -> str:
+    start = _first_present(anchor, ["start_seconds", "start_ms"])
+    end = _first_present(anchor, ["end_seconds", "end_ms"])
+    if start is None and end is None:
+        return ""
+    start_text = "" if start is None else str(start)
+    end_text = "" if end is None else str(end)
+    return f"#t={start_text},{end_text}"
+
+
+def _evidence_preview_block(item: dict, base_path: Optional[Path] = None) -> str:
+    anchor = item.get("evidence_anchor") or {}
+    if not isinstance(anchor, dict):
+        anchor = {}
+    modality = item.get("source_modality") or anchor.get("source_modality")
+    source_file = anchor.get("source_file") or item.get("source_file")
+    claim_id = _format_cell(item.get("claim_id")) or "claim"
+
+    if modality == "image":
+        crop_path = anchor.get("crop_path")
+        image_path = crop_path or source_file
+        if image_path:
+            href = _asset_href(image_path, base_path)
+            caption = "crop_path" if crop_path else "source_file"
+            return "".join(
+                [
+                    '<figure class="evidence-preview evidence-preview-image">',
+                    f'<a href="{html.escape(href, quote=True)}">',
+                    (
+                        '<img loading="lazy" '
+                        f'src="{html.escape(href, quote=True)}" '
+                        f'alt="Evidence crop for {html.escape(claim_id, quote=True)}">'
+                    ),
+                    "</a>",
+                    f"<figcaption>{html.escape(caption)}</figcaption>",
+                    "</figure>",
+                ]
+            )
+
+    if modality == "audio" and source_file:
+        href = _asset_href(source_file, base_path) + _time_fragment(anchor)
+        return "".join(
+            [
+                '<div class="evidence-preview">',
+                f'<audio controls src="{html.escape(href, quote=True)}"></audio>',
+                f'<a href="{html.escape(href, quote=True)}">Open audio clip</a>',
+                "</div>",
+            ]
+        )
+
+    if modality == "pdf" and source_file:
+        href = _asset_href(source_file, base_path)
+        page = _first_present(anchor, ["page", "page_number"])
+        if page is not None:
+            href = f"{href}#page={page}"
+        return (
+            '<div class="evidence-preview">'
+            f'<a href="{html.escape(href, quote=True)}">Open PDF evidence</a>'
+            "</div>"
+        )
+
+    evidence_text = item.get("evidence_text")
+    if evidence_text:
+        return f'<mark class="evidence-preview-text">{html.escape(_format_cell(evidence_text))}</mark>'
+    return ""
+
+
+def render_review_queue_html(queue_items: List[dict], base_path: Optional[Path] = None) -> str:
     rows = []
     for item in queue_items:
         details = json.dumps(item, indent=2, sort_keys=True)
@@ -338,6 +428,7 @@ def render_review_queue_html(queue_items: List[dict]) -> str:
         controls = _review_controls(item)
         command_block = _review_command_block(item)
         anchor_block = _evidence_anchor_block(item)
+        preview_block = _evidence_preview_block(item, base_path)
         rows.append(
             "<tr>"
             f"<td>{html.escape(_format_cell(item.get('review_state')))}</td>"
@@ -348,6 +439,7 @@ def render_review_queue_html(queue_items: List[dict]) -> str:
             f"<td>{html.escape(_format_cell(item.get('warnings')))}</td>"
             f"<td>{html.escape(_format_cell(item.get('risk_flags')))}</td>"
             f"<td>{html.escape(_format_cell(item.get('source_file')))}</td>"
+            f"<td>{preview_block}</td>"
             f"<td>{anchor_block}</td>"
             f"<td>{html.escape(_format_cell(item.get('claim_id')))}</td>"
             f"<td>{html.escape(_format_cell(item.get('source_faithful_claim')))}</td>"
@@ -371,6 +463,7 @@ def render_review_queue_html(queue_items: List[dict]) -> str:
         "<th>Warnings</th>"
         "<th>Risk Flags</th>"
         "<th>Source</th>"
+        "<th>Preview</th>"
         "<th>Anchor</th>"
         "<th>Claim ID</th>"
         "<th>Claim</th>"
@@ -400,6 +493,11 @@ def render_review_queue_html(queue_items: List[dict]) -> str:
             ".action-buttons{display:flex;gap:0.35rem;flex-wrap:wrap;}",
             ".action-buttons button{font:inherit;padding:0.25rem 0.45rem;}",
             ".review-commands{max-width:32rem;}",
+            ".evidence-preview{display:grid;gap:0.25rem;margin:0;min-width:8rem;}",
+            ".evidence-preview img{display:block;max-width:9rem;max-height:9rem;border:1px solid #d0d7de;object-fit:contain;}",
+            ".evidence-preview audio{max-width:12rem;}",
+            ".evidence-preview figcaption{font-size:0.85rem;color:#57606a;}",
+            ".evidence-preview-text{display:block;max-width:24rem;padding:0.2rem 0.35rem;background:#fff8c5;}",
             ".evidence-anchor{display:grid;grid-template-columns:max-content minmax(8rem,1fr);gap:0.15rem 0.5rem;margin:0;}",
             ".evidence-anchor dt{font-weight:700;}",
             ".evidence-anchor dd{margin:0;word-break:break-word;}",
@@ -475,7 +573,10 @@ def write_review_queue(
 
     if normalized_format == "html":
         ensure_parent(output_path)
-        output_path.write_text(render_review_queue_html(queue_items), encoding="utf-8")
+        output_path.write_text(
+            render_review_queue_html(queue_items, base_path=output_path.parent),
+            encoding="utf-8",
+        )
     else:
         write_jsonl(output_path, queue_items)
     return ReviewQueueResult(output_path=output_path, item_count=len(queue_items))

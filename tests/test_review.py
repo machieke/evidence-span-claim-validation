@@ -199,7 +199,11 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
                 source_id="src_img_1",
                 source_modality="image",
                 evidence_type="visual_region",
-                provenance={"region_id": "region_1", "bbox": [0, 0, 16, 16]},
+                provenance={
+                    "region_id": "region_1",
+                    "bbox": [0, 0, 16, 16],
+                    "crop_path": "data/work/crops/region_1.png",
+                },
                 risk_flags=["low_visual_contrast"],
             ),
         )
@@ -278,6 +282,7 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
             "evidence_type": "visual_region",
             "region_id": "region_1",
             "bbox": [0, 0, 16, 16],
+            "crop_path": "data/work/crops/region_1.png",
         }
         assert items[0]["normalized_claims"][0]["normalized_claim"]["predicate"] == "classified_as"
         assert (
@@ -344,11 +349,14 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
         assert "image_label_low_confidence" in html_text
         assert "classified_as" in html_text
         assert "<th>Anchor</th>" in html_text
+        assert "<th>Preview</th>" in html_text
         assert "<th>Warnings</th>" in html_text
         assert "<th>Risk Flags</th>" in html_text
         assert "region_id" in html_text
         assert "region_1" in html_text
         assert "[0, 0, 16, 16]" in html_text
+        assert '<img loading="lazy" src="../work/crops/region_1.png"' in html_text
+        assert 'alt="Evidence crop for claim_img_label_1"' in html_text
         assert "needs_visual_double_check" in html_text
         assert "color_only_classification" in html_text
         assert "low_visual_contrast" in html_text
