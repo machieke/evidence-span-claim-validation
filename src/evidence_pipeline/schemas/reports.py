@@ -241,3 +241,61 @@ class ClaimDuplicateGroupRecord(StrictModel):
         if not self.source_ids:
             raise ValueError("duplicate groups require at least one source_id")
         return self
+
+
+class GoldEvaluationRecord(StrictModel):
+    evaluation_id: str
+    gold_path: str
+    gold_claims: int
+    expected_accepted: int
+    produced_accepted: int
+    accepted_matches: int
+    accepted_false_positives: int
+    accepted_missing: int
+    accepted_precision: Optional[float] = None
+    accepted_recall: Optional[float] = None
+    expected_quarantined: int
+    produced_quarantined: int
+    quarantine_matches: int
+    quarantine_false_positives: int
+    quarantine_missing: int
+    quarantine_precision: Optional[float] = None
+    quarantine_recall: Optional[float] = None
+    missing_keys: List[Dict[str, str]] = Field(default_factory=list)
+    false_positive_keys: List[Dict[str, str]] = Field(default_factory=list)
+    missing_quarantine_keys: List[Dict[str, str]] = Field(default_factory=list)
+    false_positive_quarantine_keys: List[Dict[str, str]] = Field(default_factory=list)
+    schema_version: str = "gold.eval.v1"
+
+    @model_validator(mode="after")
+    def validate_gold_eval(self) -> "GoldEvaluationRecord":
+        if not self.evaluation_id.strip():
+            raise ValueError("evaluation_id must not be empty")
+        if not self.gold_path.strip():
+            raise ValueError("gold_path must not be empty")
+        count_fields = (
+            "gold_claims",
+            "expected_accepted",
+            "produced_accepted",
+            "accepted_matches",
+            "accepted_false_positives",
+            "accepted_missing",
+            "expected_quarantined",
+            "produced_quarantined",
+            "quarantine_matches",
+            "quarantine_false_positives",
+            "quarantine_missing",
+        )
+        for field_name in count_fields:
+            if getattr(self, field_name) < 0:
+                raise ValueError(f"{field_name} must be non-negative")
+        for field_name in (
+            "accepted_precision",
+            "accepted_recall",
+            "quarantine_precision",
+            "quarantine_recall",
+        ):
+            value = getattr(self, field_name)
+            if value is not None and not (0 <= value <= 1):
+                raise ValueError(f"{field_name} must be between 0 and 1")
+        return self

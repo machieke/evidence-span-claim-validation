@@ -6,6 +6,7 @@ from evidence_pipeline.schemas.evidence import EvidenceRecord
 from evidence_pipeline.schemas.reports import (
     ClaimDuplicateGroupRecord,
     ClaimRepairSuggestionRecord,
+    GoldEvaluationRecord,
     GraphEdgeRecord,
     ModelRoutingRecord,
     PIIFindingRecord,
@@ -334,4 +335,48 @@ def test_claim_duplicate_group_record_requires_consistent_member_count():
             member_normalized_claim_ids=["nclaim_1", "nclaim_2"],
             source_ids=["src_1"],
             evidence_ids=["ev_1", "ev_2"],
+        )
+
+
+def test_gold_evaluation_record_requires_valid_rates():
+    record = GoldEvaluationRecord(
+        evaluation_id="gold_eval_1",
+        gold_path="gold.json",
+        gold_claims=1,
+        expected_accepted=1,
+        produced_accepted=1,
+        accepted_matches=1,
+        accepted_false_positives=0,
+        accepted_missing=0,
+        accepted_precision=1.0,
+        accepted_recall=1.0,
+        expected_quarantined=0,
+        produced_quarantined=0,
+        quarantine_matches=0,
+        quarantine_false_positives=0,
+        quarantine_missing=0,
+        quarantine_precision=None,
+        quarantine_recall=None,
+    )
+
+    assert record.schema_version == "gold.eval.v1"
+    assert SCHEMA_REGISTRY["gold_eval"] is GoldEvaluationRecord
+
+    with pytest.raises(ValidationError):
+        GoldEvaluationRecord(
+            evaluation_id="gold_eval_2",
+            gold_path="gold.json",
+            gold_claims=1,
+            expected_accepted=1,
+            produced_accepted=1,
+            accepted_matches=1,
+            accepted_false_positives=0,
+            accepted_missing=0,
+            accepted_precision=1.5,
+            accepted_recall=1.0,
+            expected_quarantined=0,
+            produced_quarantined=0,
+            quarantine_matches=0,
+            quarantine_false_positives=0,
+            quarantine_missing=0,
         )

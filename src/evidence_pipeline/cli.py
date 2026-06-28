@@ -1240,6 +1240,7 @@ def validate_artifacts(
         "claim_graph": "claim_graph",
         "claim_duplicates": "claim_duplicates",
         "claim_repairs": "claim_repairs",
+        "gold_eval": "gold_eval",
         "model_routing": "model_routing",
         "pii_findings": "pii_findings",
         "pii_redactions": "pii_redactions",

@@ -129,3 +129,7 @@ def test_gold_eval_reports_quarantine_precision_and_recall(tmp_path: Path):
         assert gold_eval_count == 1
         assert artifact_count == 1
         assert exported_payload["quarantine_recall"] == 0.5
+
+        validation = runner.invoke(app, ["validate-artifacts", "--include-reports"])
+        assert validation.exit_code == 0, validation.stdout
+        assert "data/reports/gold_eval.jsonl: checked 1 records" in validation.stdout

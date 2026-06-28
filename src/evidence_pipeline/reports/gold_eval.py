@@ -8,6 +8,7 @@ from typing import Dict, Iterable, List, Optional, Set, Tuple
 from evidence_pipeline.config import PipelineConfig
 from evidence_pipeline.ids import stable_id
 from evidence_pipeline.jsonl import ensure_parent, read_jsonl, write_jsonl
+from evidence_pipeline.schemas.reports import GoldEvaluationRecord
 
 GoldKey = Tuple[str, str]
 
@@ -167,15 +168,14 @@ def _render_markdown(metrics: Dict[str, object], gold_path: Path) -> str:
 
 
 def _metrics_record(metrics: Dict[str, object], gold_path: Path) -> Dict[str, object]:
-    return {
-        "evaluation_id": stable_id(
+    return GoldEvaluationRecord(
+        evaluation_id=stable_id(
             "gold_eval",
             {"gold_path": str(gold_path), "metrics": metrics},
         ),
-        "gold_path": str(gold_path),
+        gold_path=str(gold_path),
         **metrics,
-        "schema_version": "gold.eval.v1",
-    }
+    ).model_dump(mode="json")
 
 
 def write_gold_eval_report(
