@@ -15,6 +15,8 @@ from evidence_pipeline.schemas.jobs import JobRecord
 from evidence_pipeline.schemas.pdf import PDFBlockRecord
 from evidence_pipeline.schemas.review import ReviewDecisionRecord, ReviewQueueRecord
 from evidence_pipeline.schemas.reports import (
+    ClaimDuplicateGroupRecord,
+    ClaimRepairSuggestionRecord,
     GraphEdgeRecord,
     ModelRoutingRecord,
     PIIFindingRecord,
@@ -79,6 +81,12 @@ SCHEMA_REGISTRY = {
     "graph_edge": GraphEdgeRecord,
     "graph-edge": GraphEdgeRecord,
     "claim_graph": GraphEdgeRecord,
+    "claim_duplicate_group": ClaimDuplicateGroupRecord,
+    "claim-duplicate-group": ClaimDuplicateGroupRecord,
+    "claim_duplicates": ClaimDuplicateGroupRecord,
+    "claim_repair": ClaimRepairSuggestionRecord,
+    "claim-repair": ClaimRepairSuggestionRecord,
+    "claim_repairs": ClaimRepairSuggestionRecord,
     "model_routing": ModelRoutingRecord,
     "model-routing": ModelRoutingRecord,
     "privacy_policy_violation": PrivacyPolicyViolationRecord,
@@ -101,6 +109,8 @@ __all__ = [
     "ChatMessageRecord",
     "AudioUtteranceRecord",
     "AuditEventRecord",
+    "ClaimDuplicateGroupRecord",
+    "ClaimRepairSuggestionRecord",
     "ErrorRecord",
     "EvidenceRecord",
     "GraphEdgeRecord",

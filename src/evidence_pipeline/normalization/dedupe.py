@@ -10,6 +10,7 @@ from evidence_pipeline.config import PipelineConfig
 from evidence_pipeline.ids import stable_id
 from evidence_pipeline.jsonl import read_jsonl_records, write_jsonl
 from evidence_pipeline.schemas.claims import NormalizedClaimRecord
+from evidence_pipeline.schemas.reports import ClaimDuplicateGroupRecord
 
 
 @dataclass
@@ -45,17 +46,16 @@ def _dedupe_key(record: NormalizedClaimRecord) -> str:
 
 
 def _group_record(key: str, records: List[NormalizedClaimRecord]) -> Dict[str, object]:
-    return {
-        "dedupe_id": stable_id("dedupe", {"normalized_claim": key}),
-        "normalized_proposition": json.loads(key),
-        "normalized_claim": records[0].normalized_claim,
-        "member_count": len(records),
-        "member_claim_ids": [record.claim_id for record in records],
-        "member_normalized_claim_ids": [record.normalized_claim_id for record in records],
-        "source_ids": sorted({record.source_id for record in records}),
-        "evidence_ids": [record.evidence_id for record in records],
-        "schema_version": "claim.dedupe.v1",
-    }
+    return ClaimDuplicateGroupRecord(
+        dedupe_id=stable_id("dedupe", {"normalized_claim": key}),
+        normalized_proposition=json.loads(key),
+        normalized_claim=records[0].normalized_claim,
+        member_count=len(records),
+        member_claim_ids=[record.claim_id for record in records],
+        member_normalized_claim_ids=[record.normalized_claim_id for record in records],
+        source_ids=sorted({record.source_id for record in records}),
+        evidence_ids=[record.evidence_id for record in records],
+    ).model_dump(mode="json")
 
 
 def dedupe_normalized_claims(

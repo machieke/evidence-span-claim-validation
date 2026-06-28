@@ -4,6 +4,8 @@ from pydantic import ValidationError
 from evidence_pipeline.schemas import SCHEMA_REGISTRY
 from evidence_pipeline.schemas.evidence import EvidenceRecord
 from evidence_pipeline.schemas.reports import (
+    ClaimDuplicateGroupRecord,
+    ClaimRepairSuggestionRecord,
     GraphEdgeRecord,
     ModelRoutingRecord,
     PIIFindingRecord,
@@ -268,4 +270,68 @@ def test_pii_redaction_record_requires_fields_and_replacements():
             fields=[],
             replacement_count=0,
             output_path="data/reports/chat_messages.redacted.jsonl",
+        )
+
+
+def test_claim_repair_suggestion_record_requires_reason_codes():
+    record = ClaimRepairSuggestionRecord(
+        repair_id="repair_1",
+        claim_id="claim_1",
+        source_id="src_1",
+        evidence_id="ev_1",
+        reason_codes=["evidence_not_exact_substring"],
+        original_evidence_text="The vessel   Hope appears old.",
+        suggested_evidence_text="The vessel Hope appears old.",
+        support_scope="span",
+    )
+
+    assert record.schema_version == "claim.repair_suggestion.v1"
+    assert SCHEMA_REGISTRY["claim_repairs"] is ClaimRepairSuggestionRecord
+
+    with pytest.raises(ValidationError):
+        ClaimRepairSuggestionRecord(
+            repair_id="repair_2",
+            claim_id="claim_1",
+            source_id="src_1",
+            evidence_id="ev_1",
+            reason_codes=[],
+            original_evidence_text="The vessel   Hope appears old.",
+            suggested_evidence_text="The vessel Hope appears old.",
+            support_scope="span",
+        )
+
+
+def test_claim_duplicate_group_record_requires_consistent_member_count():
+    record = ClaimDuplicateGroupRecord(
+        dedupe_id="dedupe_1",
+        normalized_proposition={
+            "subject": "speaker:bob",
+            "predicate": "asserts",
+            "object": "Hope had masts.",
+        },
+        normalized_claim={"subject": "speaker:bob", "predicate": "asserts", "object": "Hope had masts."},
+        member_count=2,
+        member_claim_ids=["claim_1", "claim_2"],
+        member_normalized_claim_ids=["nclaim_1", "nclaim_2"],
+        source_ids=["src_1"],
+        evidence_ids=["ev_1", "ev_2"],
+    )
+
+    assert record.schema_version == "claim.dedupe.v1"
+    assert SCHEMA_REGISTRY["claim_duplicates"] is ClaimDuplicateGroupRecord
+
+    with pytest.raises(ValidationError):
+        ClaimDuplicateGroupRecord(
+            dedupe_id="dedupe_2",
+            normalized_proposition={
+                "subject": "speaker:bob",
+                "predicate": "asserts",
+                "object": "Hope had masts.",
+            },
+            normalized_claim={"subject": "speaker:bob", "predicate": "asserts", "object": "Hope had masts."},
+            member_count=2,
+            member_claim_ids=["claim_1"],
+            member_normalized_claim_ids=["nclaim_1", "nclaim_2"],
+            source_ids=["src_1"],
+            evidence_ids=["ev_1", "ev_2"],
         )

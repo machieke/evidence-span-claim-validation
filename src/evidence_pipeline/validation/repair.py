@@ -9,6 +9,7 @@ from evidence_pipeline.ids import stable_id
 from evidence_pipeline.jsonl import read_jsonl_records, write_jsonl
 from evidence_pipeline.schemas.claims import RawClaimRecord
 from evidence_pipeline.schemas.evidence import EvidenceRecord
+from evidence_pipeline.schemas.reports import ClaimRepairSuggestionRecord
 from evidence_pipeline.schemas.spans import SpanRecord
 from evidence_pipeline.spans.sentence_splitter import split_sentences
 from evidence_pipeline.validation.text_support import normalize_text_for_matching
@@ -72,8 +73,8 @@ def suggest_evidence_repairs(
             if repaired is None:
                 continue
             suggestions.append(
-                {
-                    "repair_id": stable_id(
+                ClaimRepairSuggestionRecord(
+                    repair_id=stable_id(
                         "repair",
                         {
                             "claim_id": claim.claim_id,
@@ -81,16 +82,15 @@ def suggest_evidence_repairs(
                             "suggested_evidence_text": repaired,
                         },
                     ),
-                    "claim_id": claim.claim_id,
-                    "source_id": claim.source_id,
-                    "evidence_id": claim.evidence_id,
-                    "span_id": claim.span_id,
-                    "reason_codes": ["evidence_not_exact_substring"],
-                    "original_evidence_text": claim.evidence_text,
-                    "suggested_evidence_text": repaired,
-                    "support_scope": support_scope,
-                    "schema_version": "claim.repair_suggestion.v1",
-                }
+                    claim_id=claim.claim_id,
+                    source_id=claim.source_id,
+                    evidence_id=claim.evidence_id,
+                    span_id=claim.span_id,
+                    reason_codes=["evidence_not_exact_substring"],
+                    original_evidence_text=claim.evidence_text,
+                    suggested_evidence_text=repaired,
+                    support_scope=support_scope,
+                ).model_dump(mode="json", exclude_none=True)
             )
             break
 

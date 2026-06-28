@@ -1238,6 +1238,8 @@ def validate_artifacts(
     }
     report_schema_by_key = {
         "claim_graph": "claim_graph",
+        "claim_duplicates": "claim_duplicates",
+        "claim_repairs": "claim_repairs",
         "model_routing": "model_routing",
         "pii_findings": "pii_findings",
         "pii_redactions": "pii_redactions",

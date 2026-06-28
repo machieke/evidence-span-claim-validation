@@ -75,3 +75,7 @@ def test_repair_claims_suggests_exact_evidence_text(tmp_path: Path):
         assert trace.exit_code == 0, trace.stdout
         trace_payload = json.loads(trace.stdout)
         assert trace_payload["repair_suggestions"][0]["repair_id"] == suggestions[0]["repair_id"]
+
+        artifact_check = runner.invoke(app, ["validate-artifacts", "--include-reports"])
+        assert artifact_check.exit_code == 0, artifact_check.stdout
+        assert "data/reports/claim_repairs.jsonl: checked 1 records" in artifact_check.stdout

@@ -183,3 +183,61 @@ class PIIRedactionRecord(StrictModel):
         if self.replacement_count < 1:
             raise ValueError("replacement_count must be positive")
         return self
+
+
+class ClaimRepairSuggestionRecord(StrictModel):
+    repair_id: str
+    claim_id: str
+    source_id: str
+    evidence_id: str
+    span_id: Optional[str] = None
+    reason_codes: List[str] = Field(default_factory=list)
+    original_evidence_text: str
+    suggested_evidence_text: str
+    support_scope: Literal["span", "evidence"]
+    schema_version: str = "claim.repair_suggestion.v1"
+
+    @model_validator(mode="after")
+    def validate_repair(self) -> "ClaimRepairSuggestionRecord":
+        for field_name in (
+            "repair_id",
+            "claim_id",
+            "source_id",
+            "evidence_id",
+            "original_evidence_text",
+            "suggested_evidence_text",
+        ):
+            value = getattr(self, field_name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{field_name} must not be empty")
+        if not self.reason_codes:
+            raise ValueError("repair suggestions require at least one reason code")
+        return self
+
+
+class ClaimDuplicateGroupRecord(StrictModel):
+    dedupe_id: str
+    normalized_proposition: Dict[str, Any]
+    normalized_claim: Dict[str, Any]
+    member_count: int
+    member_claim_ids: List[str]
+    member_normalized_claim_ids: List[str]
+    source_ids: List[str]
+    evidence_ids: List[str]
+    schema_version: str = "claim.dedupe.v1"
+
+    @model_validator(mode="after")
+    def validate_duplicate_group(self) -> "ClaimDuplicateGroupRecord":
+        if not self.dedupe_id.strip():
+            raise ValueError("dedupe_id must not be empty")
+        if self.member_count < 1:
+            raise ValueError("member_count must be positive")
+        if len(self.member_claim_ids) != self.member_count:
+            raise ValueError("member_count must match member_claim_ids")
+        if len(self.member_normalized_claim_ids) != self.member_count:
+            raise ValueError("member_count must match member_normalized_claim_ids")
+        if len(self.evidence_ids) != self.member_count:
+            raise ValueError("member_count must match evidence_ids")
+        if not self.source_ids:
+            raise ValueError("duplicate groups require at least one source_id")
+        return self

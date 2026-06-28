@@ -55,6 +55,10 @@ def test_dedupe_claims_groups_duplicate_normalized_claims(tmp_path: Path):
         trace_payload = json.loads(trace.stdout)
         assert trace_payload["duplicate_groups"][0]["dedupe_id"] == groups[0]["dedupe_id"]
 
+        artifact_check = runner.invoke(app, ["validate-artifacts", "--include-reports"])
+        assert artifact_check.exit_code == 0, artifact_check.stdout
+        assert "data/reports/claim_duplicates.jsonl: checked 1 records" in artifact_check.stdout
+
 
 def test_dedupe_claims_groups_cross_source_normalized_propositions(tmp_path: Path):
     with runner.isolated_filesystem(temp_dir=tmp_path):
