@@ -534,6 +534,20 @@ def render_summary_markdown(config: PipelineConfig) -> Tuple[str, Dict[str, int]
             _count_list_values(artifacts["review_queue"], "reason_codes"),
         )
     )
+    lines.extend(
+        _counter_table(
+            "Review Queue Warnings",
+            "Warning",
+            _count_list_values(artifacts["review_queue"], "warnings"),
+        )
+    )
+    lines.extend(
+        _counter_table(
+            "Review Queue Risk Flags",
+            "Risk Flag",
+            _count_list_values(artifacts["review_queue"], "risk_flags"),
+        )
+    )
     lines.extend(_counter_table("Audit Events", "Action", _count_by(artifacts["audit_events"], "action")))
     lines.extend(_counter_table("Quarantine Reasons", "Reason", _count_quarantine_reasons(artifacts["quarantine"])))
     lines.extend(_counter_table("PII Findings By Type", "PII Type", _count_by(artifacts["pii_findings"], "pii_type")))

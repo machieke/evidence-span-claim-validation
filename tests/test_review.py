@@ -8,6 +8,7 @@ from evidence_pipeline.jsonl import append_jsonl, read_jsonl
 from evidence_pipeline.schemas.claims import NormalizedClaimRecord, RawClaimRecord
 from evidence_pipeline.schemas.evidence import EvidenceRecord
 from evidence_pipeline.schemas.sources import SourceRecord
+from evidence_pipeline.schemas.validation import ValidationRecord
 
 
 runner = CliRunner()
@@ -199,6 +200,7 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
                 source_modality="image",
                 evidence_type="visual_region",
                 provenance={"region_id": "region_1", "bbox": [0, 0, 16, 16]},
+                risk_flags=["low_visual_contrast"],
             ),
         )
         append_jsonl(
@@ -217,6 +219,7 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
                 attribution={"type": "model", "agent": "classifier_v1"},
                 truth_status="model_observation_unverified",
                 confidence=0.4,
+                risk_flags=["color_only_classification"],
             ),
         )
         append_jsonl(
@@ -241,6 +244,18 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
         validation = runner.invoke(app, ["validate-claims"])
         assert validation.exit_code == 0, validation.stdout
         assert "claims_quarantined=1" in validation.stdout
+        append_jsonl(
+            Path("data/jsonl/validations.jsonl"),
+            ValidationRecord(
+                validation_id="val_claim_img_label_1_review_context",
+                claim_id="claim_img_label_1",
+                record_id="claim_img_label_1",
+                stage="validate_claims",
+                status="quarantined",
+                errors=["image_label_low_confidence"],
+                warnings=["needs_visual_double_check"],
+            ),
+        )
 
         queue = runner.invoke(app, ["review-queue"])
         assert queue.exit_code == 0, queue.stdout
@@ -251,6 +266,8 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
         assert items[0]["source_file"] == "image.png"
         assert items[0]["validation_status"] == "quarantined"
         assert items[0]["reason_codes"] == ["image_label_low_confidence"]
+        assert items[0]["warnings"] == ["needs_visual_double_check"]
+        assert items[0]["risk_flags"] == ["color_only_classification", "low_visual_contrast"]
         assert items[0]["review_state"] == "unreviewed"
         assert items[0]["evidence"]["provenance"]["bbox"] == [0, 0, 16, 16]
         assert items[0]["evidence_anchor"] == {
@@ -308,6 +325,11 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
         assert "| unreviewed | 1 |" in report_text
         assert "## Review Queue Reasons" in report_text
         assert "| image_label_low_confidence | 1 |" in report_text
+        assert "## Review Queue Warnings" in report_text
+        assert "| needs_visual_double_check | 1 |" in report_text
+        assert "## Review Queue Risk Flags" in report_text
+        assert "| color_only_classification | 1 |" in report_text
+        assert "| low_visual_contrast | 1 |" in report_text
 
         artifact_check = runner.invoke(app, ["validate-artifacts", "--include-reports"])
         assert artifact_check.exit_code == 0, artifact_check.stdout
@@ -322,9 +344,14 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
         assert "image_label_low_confidence" in html_text
         assert "classified_as" in html_text
         assert "<th>Anchor</th>" in html_text
+        assert "<th>Warnings</th>" in html_text
+        assert "<th>Risk Flags</th>" in html_text
         assert "region_id" in html_text
         assert "region_1" in html_text
         assert "[0, 0, 16, 16]" in html_text
+        assert "needs_visual_double_check" in html_text
+        assert "color_only_classification" in html_text
+        assert "low_visual_contrast" in html_text
         assert '<select name="decision"' in html_text
         assert '<input name="reason_code"' in html_text
         assert '<textarea name="notes"' in html_text
