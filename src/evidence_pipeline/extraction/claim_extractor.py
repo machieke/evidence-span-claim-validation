@@ -4,6 +4,11 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 from evidence_pipeline.config import PipelineConfig
+from evidence_pipeline.extraction.llm_client import (
+    DeterministicJsonExtractor,
+    JsonExtractionRequest,
+    extract_json,
+)
 from evidence_pipeline.ids import stable_id
 from evidence_pipeline.jsonl import append_jsonl, existing_values, read_jsonl_records
 from evidence_pipeline.schemas.claims import RawClaimRecord
@@ -17,6 +22,7 @@ IMAGE_CLUSTER_EXTRACTOR_VERSION = "image_cluster.rules.v1"
 IMAGE_OCR_EXTRACTOR_VERSION = "image_ocr.rules.v1"
 SUPPORTED_MODALITIES = {"all", "chat", "pdf", "audio", "image"}
 TEXT_SPAN_MODALITIES = {"chat", "pdf", "audio", "image"}
+CLAIM_JSON_EXTRACTOR = DeterministicJsonExtractor()
 
 
 @dataclass
@@ -102,13 +108,27 @@ def _risk_flags(span: SpanRecord, evidence: EvidenceRecord) -> List[str]:
     return sorted(set(span.risk_flags) | set(evidence.risk_flags))
 
 
+def _json_extracted_claim(record: RawClaimRecord) -> RawClaimRecord:
+    extractor = str(record.attributes.get("extractor") or record.model.model or "deterministic")
+    request = JsonExtractionRequest(
+        prompt=f"Extract one RawClaimRecord with {extractor}.",
+        schema_name="RawClaimRecord",
+        schema=RawClaimRecord.model_json_schema(),
+        provider=record.model.provider or "deterministic",
+        model=record.model.model or extractor,
+        prompt_version=record.model.prompt_version,
+        metadata={"payload": record.model_dump(mode="json", exclude_none=True)},
+    )
+    return extract_json(CLAIM_JSON_EXTRACTOR, request, RawClaimRecord)
+
+
 def _raw_claim_from_span(span: SpanRecord, evidence: EvidenceRecord) -> RawClaimRecord:
     if not span.text:
         raise ValueError("text span is required for deterministic extraction")
     risk_flags = _risk_flags(span, evidence)
     context_dependent = "context_dependent_coreference" in risk_flags and bool(span.context_text)
     extractor = _extractor_for_span(span, evidence)
-    return RawClaimRecord(
+    record = RawClaimRecord(
         claim_id=_claim_id(span, extractor),
         source_id=span.source_id,
         source_modality=span.source_modality,
@@ -136,6 +156,7 @@ def _raw_claim_from_span(span: SpanRecord, evidence: EvidenceRecord) -> RawClaim
         support_status="raw_extracted",
         risk_flags=risk_flags,
     )
+    return _json_extracted_claim(record)
 
 
 def _claim_type_for_span(span: SpanRecord, evidence: EvidenceRecord) -> str:
@@ -161,7 +182,7 @@ def _raw_image_claim_from_evidence(evidence: EvidenceRecord) -> RawClaimRecord:
         else 0.5
     )
 
-    return RawClaimRecord(
+    record = RawClaimRecord(
         claim_id=stable_id(
             "claim_img",
             {
@@ -203,6 +224,7 @@ def _raw_image_claim_from_evidence(evidence: EvidenceRecord) -> RawClaimRecord:
         support_status="raw_extracted",
         risk_flags=evidence.risk_flags,
     )
+    return _json_extracted_claim(record)
 
 
 def _raw_image_cluster_claim_from_evidence(evidence: EvidenceRecord) -> RawClaimRecord:
@@ -223,7 +245,7 @@ def _raw_image_cluster_claim_from_evidence(evidence: EvidenceRecord) -> RawClaim
     )
     agent = f"{embedding_model}+{clustering_method}"
 
-    return RawClaimRecord(
+    record = RawClaimRecord(
         claim_id=stable_id(
             "claim_vf",
             {
@@ -268,6 +290,7 @@ def _raw_image_cluster_claim_from_evidence(evidence: EvidenceRecord) -> RawClaim
         support_status="raw_extracted",
         risk_flags=evidence.risk_flags,
     )
+    return _json_extracted_claim(record)
 
 
 def extract_claims_from_spans(
