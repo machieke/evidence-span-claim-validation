@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Sequence
+from typing import List, Optional, Sequence
 
 from evidence_pipeline.config import PipelineConfig
 from evidence_pipeline.ids import stable_id
 from evidence_pipeline.jsonl import append_jsonl, existing_values, read_jsonl_records
 from evidence_pipeline.normalization.entities import canonical_id
-from evidence_pipeline.normalization.predicates import predicate_for_modality
+from evidence_pipeline.normalization.predicates import (
+    PREDICATE_REGISTRY_VERSION,
+    predicate_definition,
+    predicate_for_claim,
+)
 from evidence_pipeline.schemas.claims import (
     EntityResolution,
     NormalizationDetails,
@@ -31,8 +35,18 @@ def _normalized_claim_id(claim_id: str) -> str:
 
 
 def _subject_prefix(raw_claim: Optional[RawClaimRecord], validated_claim: ValidatedClaimRecord) -> str:
+    if raw_claim is not None and raw_claim.subject:
+        if raw_claim.source_modality == "image" and raw_claim.claim_type == "unnamed_visual_feature_cluster":
+            return "image_cluster"
+        if raw_claim.source_modality == "image":
+            return "image_region"
+        return "entity"
     if raw_claim is None:
         return "source"
+    return _attribution_prefix(raw_claim, validated_claim)
+
+
+def _attribution_prefix(raw_claim: RawClaimRecord, validated_claim: ValidatedClaimRecord) -> str:
     attribution_type = raw_claim.attribution.type
     if attribution_type == "speaker":
         return "speaker"
@@ -46,6 +60,8 @@ def _subject_prefix(raw_claim: Optional[RawClaimRecord], validated_claim: Valida
 
 
 def _subject_surface(raw_claim: Optional[RawClaimRecord], validated_claim: ValidatedClaimRecord) -> str:
+    if raw_claim is not None and raw_claim.subject:
+        return str(raw_claim.subject)
     if raw_claim is not None and raw_claim.attribution.agent:
         return raw_claim.attribution.agent
     return validated_claim.source_id
@@ -59,13 +75,49 @@ def _object_value(raw_claim: Optional[RawClaimRecord], validated_claim: Validate
     return validated_claim.source_faithful_claim
 
 
+def _entity_resolutions(
+    raw_claim: Optional[RawClaimRecord],
+    validated_claim: ValidatedClaimRecord,
+    subject_surface: str,
+    subject_id: str,
+) -> List[EntityResolution]:
+    subject_basis = "claim_subject" if raw_claim is not None and raw_claim.subject else (
+        "attribution_agent" if raw_claim is not None and raw_claim.attribution.agent else "source_id"
+    )
+    resolutions = [
+        EntityResolution(
+            surface=subject_surface,
+            canonical_id=subject_id,
+            confidence=1.0,
+            basis=subject_basis,
+        )
+    ]
+    if raw_claim is not None and raw_claim.attribution.agent and raw_claim.attribution.agent != subject_surface:
+        attribution_prefix = _attribution_prefix(raw_claim, validated_claim)
+        resolutions.append(
+            EntityResolution(
+                surface=raw_claim.attribution.agent,
+                canonical_id=canonical_id(attribution_prefix, raw_claim.attribution.agent),
+                confidence=1.0,
+                basis="attribution_agent",
+            )
+        )
+    return resolutions
+
+
 def _normalization_record(
     validated_claim: ValidatedClaimRecord,
     raw_claim: Optional[RawClaimRecord],
 ) -> NormalizedClaimRecord:
     subject_surface = _subject_surface(raw_claim, validated_claim)
     subject_id = canonical_id(_subject_prefix(raw_claim, validated_claim), subject_surface)
-    predicate = predicate_for_modality(validated_claim.modality)
+    raw_predicate = str(raw_claim.predicate) if raw_claim is not None and raw_claim.predicate else None
+    predicate = predicate_for_claim(
+        validated_claim.modality,
+        claim_type=raw_claim.claim_type if raw_claim is not None else None,
+        raw_predicate=raw_predicate,
+    )
+    predicate_info = predicate_definition(predicate)
     raw_attribution = raw_claim.attribution.model_dump(mode="json") if raw_claim is not None else None
 
     return NormalizedClaimRecord(
@@ -85,17 +137,12 @@ def _normalization_record(
             },
         },
         normalization=NormalizationDetails(
-            entity_resolution=[
-                EntityResolution(
-                    surface=subject_surface,
-                    canonical_id=subject_id,
-                    confidence=1.0,
-                    basis="attribution_agent" if raw_claim is not None and raw_claim.attribution.agent else "source_id",
-                )
-            ],
-            predicate_mapping=PredicateMapping(surface=validated_claim.modality, canonical=predicate),
+            entity_resolution=_entity_resolutions(raw_claim, validated_claim, subject_surface, subject_id),
+            predicate_mapping=PredicateMapping(surface=raw_predicate or validated_claim.modality, canonical=predicate),
             metadata={
                 "normalizer_version": NORMALIZER_VERSION,
+                "predicate_registry_version": PREDICATE_REGISTRY_VERSION,
+                "predicate_description": predicate_info.description,
                 "raw_claim_available": raw_claim is not None,
             },
         ),
