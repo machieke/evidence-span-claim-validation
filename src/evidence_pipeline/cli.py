@@ -63,7 +63,7 @@ from evidence_pipeline.validation.pii import detect_pii, redact_pii
 from evidence_pipeline.validation.privacy import check_privacy_policy
 from evidence_pipeline.validation.repair import REPAIR_REASON_CODES, suggest_evidence_repairs
 from evidence_pipeline.validation.review import record_claim_review, write_review_queue
-from evidence_pipeline.validation.schema_repair import import_raw_claim_candidates
+from evidence_pipeline.validation.schema_repair import SCHEMA_REPAIR_VERSION, import_raw_claim_candidates
 
 app = typer.Typer(help="Evidence-span claim validation pipeline.")
 
@@ -918,6 +918,19 @@ def import_raw_claims_command(
         result = import_raw_claim_candidates(config, input_path)
     except ValueError as exc:
         raise typer.BadParameter(str(exc))
+    record_job_result(
+        config,
+        stage="import_raw_claims",
+        input_record_ids=[str(input_path)],
+        model_id=SCHEMA_REPAIR_VERSION,
+        metrics={
+            "claims_imported": result.imported,
+            "claims_repaired": result.repaired,
+            "claims_quarantined": result.quarantined,
+            "claims_skipped": result.skipped,
+        },
+        metadata={"input_path": str(input_path)},
+    )
     typer.echo(
         f"claims_imported={result.imported} claims_repaired={result.repaired} "
         f"claims_quarantined={result.quarantined} claims_skipped={result.skipped}"
