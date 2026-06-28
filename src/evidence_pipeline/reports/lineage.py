@@ -140,6 +140,7 @@ def trace_claim(config: PipelineConfig, claim_id: str) -> Dict[str, Any]:
     pii_redactions = _optional_rows(config.paths.reports_dir / "pii_redactions.jsonl")
     privacy_violations = _optional_rows(config.paths.reports_dir / "privacy_policy_violations.jsonl")
     retention_plan = _optional_rows(config.paths.reports_dir / "retention_plan.jsonl")
+    review_queue = _optional_rows(config.paths.reports_dir / "review_queue.jsonl")
 
     raw_claim = _first_by(raw_claims, "claim_id", claim_id)
     validated_claim = _first_by(validated_claims, "claim_id", claim_id)
@@ -151,6 +152,7 @@ def trace_claim(config: PipelineConfig, claim_id: str) -> Dict[str, Any]:
     claim_graph_edges = _all_by(graph_edges, "claim_id", claim_id)
     claim_repair_suggestions = _all_by(repair_suggestions, "claim_id", claim_id)
     claim_duplicate_groups = _duplicate_groups_for_claim(duplicate_groups, claim_id)
+    claim_review_queue = _all_by(review_queue, "claim_id", claim_id)
 
     anchor = raw_claim or validated_claim or (normalized[0] if normalized else None)
     claim_jobs = _jobs_for_claim(jobs, anchor, claim_id)
@@ -187,6 +189,7 @@ def trace_claim(config: PipelineConfig, claim_id: str) -> Dict[str, Any]:
         "privacy_policy_violations": _all_by(privacy_violations, "claim_id", claim_id),
         "retention_plan": claim_retention_plan,
         "review_decisions": claim_reviews,
+        "review_queue": claim_review_queue,
         "audit_events": claim_audit_events,
         "validated_claim": validated_claim,
         "normalized_claims": normalized,
@@ -236,6 +239,7 @@ def render_claim_trace_html(trace: Dict[str, Any]) -> str:
         ("Jobs", trace.get("jobs")),
         ("Model Routing", trace.get("model_routing")),
         ("Review Decisions", trace.get("review_decisions")),
+        ("Review Queue", trace.get("review_queue")),
         ("Audit Events", trace.get("audit_events")),
         ("Graph Edges", trace.get("graph_edges")),
         ("Repair Suggestions", trace.get("repair_suggestions")),

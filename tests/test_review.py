@@ -181,6 +181,11 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
         assert items[0]["review_state"] == "unreviewed"
         assert items[0]["evidence"]["provenance"]["bbox"] == [0, 0, 16, 16]
 
+        trace = runner.invoke(app, ["trace-claim", "claim_img_label_1"])
+        assert trace.exit_code == 0, trace.stdout
+        trace_payload = json.loads(trace.stdout)
+        assert trace_payload["review_queue"][0]["review_queue_id"] == items[0]["review_queue_id"]
+
         report = runner.invoke(app, ["report"])
         assert report.exit_code == 0, report.stdout
         report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
@@ -194,6 +199,12 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
         assert "<h1>Claim Review Queue</h1>" in html_text
         assert "image_label_low_confidence" in html_text
         assert "Model classifier_v1 classified region region_1 as red." in html_text
+
+        html_trace = runner.invoke(app, ["trace-claim", "claim_img_label_1", "--format", "html"])
+        assert html_trace.exit_code == 0, html_trace.stdout
+        trace_html = Path("data/reports/claim_img_label_1.trace.html").read_text(encoding="utf-8")
+        assert "<h2>Review Queue</h2>" in trace_html
+        assert items[0]["review_queue_id"] in trace_html
 
         needs_review = runner.invoke(
             app,
