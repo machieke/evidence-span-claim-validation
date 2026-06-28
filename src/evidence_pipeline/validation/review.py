@@ -81,6 +81,15 @@ def _payloads_by_id(config: PipelineConfig, artifact: str, id_field: str) -> Dic
     }
 
 
+def _normalized_by_claim_id(config: PipelineConfig) -> Dict[str, List[dict]]:
+    normalized_claims: Dict[str, List[dict]] = {}
+    for _, payload in read_jsonl(config.jsonl_paths()["claims_normalized"]):
+        claim_id = payload.get("claim_id")
+        if isinstance(claim_id, str):
+            normalized_claims.setdefault(claim_id, []).append(payload)
+    return normalized_claims
+
+
 def _reviewable_without_validation(claim: dict) -> bool:
     return claim.get("support_status") == "needs_review"
 
@@ -96,6 +105,7 @@ def _review_queue_item(
     validation: Optional[dict],
     evidence: Optional[dict],
     source: Optional[dict],
+    normalized_claims: List[dict],
     latest_review: Optional[ReviewDecisionRecord],
 ) -> dict:
     evidence_risk_flags = evidence.get("risk_flags", []) if evidence else []
@@ -124,6 +134,7 @@ def _review_queue_item(
             "provenance": evidence.get("provenance", {}) if evidence else {},
             "risk_flags": evidence_risk_flags,
         },
+        normalized_claims=normalized_claims,
         validation_status=validation.get("status") if validation else "unvalidated",
         reason_codes=validation_errors,
         warnings=validation_warnings,
@@ -147,10 +158,17 @@ def _format_cell(value: object) -> str:
     return str(value)
 
 
+def _format_json_cell(value: object) -> str:
+    if not value:
+        return ""
+    return json.dumps(value, sort_keys=True, ensure_ascii=False)
+
+
 def render_review_queue_html(queue_items: List[dict]) -> str:
     rows = []
     for item in queue_items:
         details = json.dumps(item, indent=2, sort_keys=True)
+        normalized = _format_json_cell(item.get("normalized_claims"))
         rows.append(
             "<tr>"
             f"<td>{html.escape(_format_cell(item.get('review_state')))}</td>"
@@ -160,6 +178,7 @@ def render_review_queue_html(queue_items: List[dict]) -> str:
             f"<td>{html.escape(_format_cell(item.get('claim_id')))}</td>"
             f"<td>{html.escape(_format_cell(item.get('source_faithful_claim')))}</td>"
             f"<td>{html.escape(_format_cell(item.get('evidence_text')))}</td>"
+            f"<td><pre>{html.escape(normalized)}</pre></td>"
             "<td><details><summary>JSON</summary><pre>"
             f"{html.escape(details)}"
             "</pre></details></td>"
@@ -177,6 +196,7 @@ def render_review_queue_html(queue_items: List[dict]) -> str:
         "<th>Claim ID</th>"
         "<th>Claim</th>"
         "<th>Evidence</th>"
+        "<th>Normalized</th>"
         "<th>Packet</th>"
         "</tr></thead>",
         "<tbody>",
@@ -242,6 +262,7 @@ def write_review_queue(
     latest_reviews = _latest_reviews(config)
     evidence_by_id = _payloads_by_id(config, "evidence", "evidence_id")
     source_by_id = _payloads_by_id(config, "sources", "source_id")
+    normalized_by_claim_id = _normalized_by_claim_id(config)
 
     queue_items = []
     for _, claim in read_jsonl(paths["claims_raw"]):
@@ -260,7 +281,10 @@ def write_review_queue(
             continue
         evidence = evidence_by_id.get(str(claim.get("evidence_id")))
         source = source_by_id.get(str(claim.get("source_id")))
-        queue_items.append(_review_queue_item(claim, validation, evidence, source, latest_review))
+        normalized_claims = normalized_by_claim_id.get(claim_id, [])
+        queue_items.append(
+            _review_queue_item(claim, validation, evidence, source, normalized_claims, latest_review)
+        )
 
     if normalized_format == "html":
         ensure_parent(output_path)

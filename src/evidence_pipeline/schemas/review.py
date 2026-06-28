@@ -48,6 +48,7 @@ class ReviewQueueRecord(StrictModel):
     source_faithful_claim: Optional[str] = None
     evidence_text: Optional[str] = None
     evidence: ReviewQueueEvidence = Field(default_factory=ReviewQueueEvidence)
+    normalized_claims: List[Dict[str, Any]] = Field(default_factory=list)
     validation_status: str
     reason_codes: List[str] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)

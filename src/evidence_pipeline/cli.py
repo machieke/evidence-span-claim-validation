@@ -1873,6 +1873,7 @@ def review_queue_command(
         config,
         stage="review_queue",
         input_record_ids=[
+            "claims_normalized",
             "claims_raw",
             f"format:{format}",
             f"include_reviewed:{include_reviewed}",

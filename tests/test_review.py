@@ -5,7 +5,7 @@ from typer.testing import CliRunner
 
 from evidence_pipeline.cli import app
 from evidence_pipeline.jsonl import append_jsonl, read_jsonl
-from evidence_pipeline.schemas.claims import RawClaimRecord
+from evidence_pipeline.schemas.claims import NormalizedClaimRecord, RawClaimRecord
 from evidence_pipeline.schemas.evidence import EvidenceRecord
 from evidence_pipeline.schemas.sources import SourceRecord
 
@@ -219,6 +219,24 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
                 confidence=0.4,
             ),
         )
+        append_jsonl(
+            Path("data/jsonl/claims.normalized.jsonl"),
+            NormalizedClaimRecord(
+                normalized_claim_id="nclaim_img_label_1",
+                claim_id="claim_img_label_1",
+                source_id="src_img_1",
+                evidence_id="ev_img_1",
+                normalized_claim={
+                    "subject": "region_1",
+                    "predicate": "classified_as",
+                    "object": "red",
+                    "qualifiers": {
+                        "modality": "model_observation",
+                        "truth_status": "model_observation_unverified",
+                    },
+                },
+            ),
+        )
 
         validation = runner.invoke(app, ["validate-claims"])
         assert validation.exit_code == 0, validation.stdout
@@ -235,11 +253,13 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
         assert items[0]["reason_codes"] == ["image_label_low_confidence"]
         assert items[0]["review_state"] == "unreviewed"
         assert items[0]["evidence"]["provenance"]["bbox"] == [0, 0, 16, 16]
+        assert items[0]["normalized_claims"][0]["normalized_claim"]["predicate"] == "classified_as"
 
         jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
         assert [job["stage"] for job in jobs] == ["validate_claims", "review_queue"]
         assert jobs[1]["model_id"] == "review.queue.v1"
         assert jobs[1]["input_record_ids"] == [
+            "claims_normalized",
             "claims_raw",
             "format:jsonl",
             "include_reviewed:False",
@@ -252,6 +272,7 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
         assert trace.exit_code == 0, trace.stdout
         trace_payload = json.loads(trace.stdout)
         assert trace_payload["review_queue"][0]["review_queue_id"] == items[0]["review_queue_id"]
+        assert trace_payload["review_queue"][0]["normalized_claims"][0]["normalized_claim"]["object"] == "red"
 
         report = runner.invoke(app, ["report"])
         assert report.exit_code == 0, report.stdout
@@ -275,6 +296,7 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
         assert "<!doctype html>" in html_text
         assert "<h1>Claim Review Queue</h1>" in html_text
         assert "image_label_low_confidence" in html_text
+        assert "classified_as" in html_text
         assert "Model classifier_v1 classified region region_1 as red." in html_text
 
         html_trace = runner.invoke(app, ["trace-claim", "claim_img_label_1", "--format", "html"])
