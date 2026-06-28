@@ -124,6 +124,7 @@ def test_check_privacy_flags_external_provider_for_sensitive_source(tmp_path: Pa
         trace_payload = json.loads(trace.stdout)
         assert trace_payload["privacy_policy_violations"][0]["violation_id"] == violations[0]["violation_id"]
         assert trace_payload["audit_events"][0]["target_id"] == violations[0]["violation_id"]
+        assert [job["stage"] for job in trace_payload["jobs"]] == ["check_privacy"]
 
         artifact_check = runner.invoke(app, ["validate-artifacts", "--include-reports"])
         assert artifact_check.exit_code == 0, artifact_check.stdout

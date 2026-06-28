@@ -107,6 +107,8 @@ def test_retention_plan_reports_old_raw_sources_without_deleting(tmp_path: Path)
             trace_payload["retention_plan"][0]["retention_id"]
             == candidates[0]["retention_id"]
         )
+        assert trace_payload["audit_events"][0]["target_id"] == candidates[0]["retention_id"]
+        assert [job["stage"] for job in trace_payload["jobs"]] == ["retention_plan"]
 
         artifact_check = runner.invoke(app, ["validate-artifacts", "--include-reports"])
         assert artifact_check.exit_code == 0, artifact_check.stdout

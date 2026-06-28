@@ -92,6 +92,24 @@ def _source_rows_for_claim(rows: List[dict], anchor: Optional[dict]) -> List[dic
     return _all_by(rows, "source_id", source_id)
 
 
+def _audit_events_for_claim(rows: List[dict], anchor: Optional[dict], claim_id: str) -> List[dict]:
+    source_id = anchor.get("source_id") if anchor else None
+    matched = []
+    seen = set()
+    for row in rows:
+        event_id = row.get("audit_event_id") or id(row)
+        if event_id in seen:
+            continue
+        if row.get("claim_id") == claim_id:
+            matched.append(row)
+            seen.add(event_id)
+            continue
+        if source_id and not row.get("claim_id") and row.get("source_id") == source_id:
+            matched.append(row)
+            seen.add(event_id)
+    return matched
+
+
 def _jobs_for_claim(jobs: List[dict], anchor: Optional[dict], claim_id: str) -> List[dict]:
     if anchor is None:
         return []
@@ -114,6 +132,12 @@ def _jobs_for_claim(jobs: List[dict], anchor: Optional[dict], claim_id: str) -> 
             matched.append(job)
             continue
         if stage == "normalize_claims" and "claims_validated" in input_ids:
+            matched.append(job)
+            continue
+        if stage == "check_privacy" and {"claims_raw", "sources"} <= input_ids:
+            matched.append(job)
+            continue
+        if stage == "retention_plan" and source_id and "sources" in input_ids:
             matched.append(job)
     return matched
 
@@ -147,7 +171,6 @@ def trace_claim(config: PipelineConfig, claim_id: str) -> Dict[str, Any]:
     normalized = _all_by(normalized_claims, "claim_id", claim_id)
     claim_validations = _all_by(validations, "claim_id", claim_id)
     claim_reviews = _all_by(review_decisions, "claim_id", claim_id)
-    claim_audit_events = _all_by(audit_events, "claim_id", claim_id)
     quarantined = _all_by(quarantine, "claim_id", claim_id)
     claim_graph_edges = _all_by(graph_edges, "claim_id", claim_id)
     claim_repair_suggestions = _all_by(repair_suggestions, "claim_id", claim_id)
@@ -155,6 +178,7 @@ def trace_claim(config: PipelineConfig, claim_id: str) -> Dict[str, Any]:
     claim_review_queue = _all_by(review_queue, "claim_id", claim_id)
 
     anchor = raw_claim or validated_claim or (normalized[0] if normalized else None)
+    claim_audit_events = _audit_events_for_claim(audit_events, anchor, claim_id)
     claim_jobs = _jobs_for_claim(jobs, anchor, claim_id)
     claim_model_routing = _routing_for_claim(model_routing, anchor, claim_id)
     claim_pii_findings = _report_rows_for_claim(pii_findings, anchor, claim_id)
