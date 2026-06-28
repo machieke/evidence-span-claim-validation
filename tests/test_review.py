@@ -297,6 +297,12 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
         assert "<h1>Claim Review Queue</h1>" in html_text
         assert "image_label_low_confidence" in html_text
         assert "classified_as" in html_text
+        assert '<select name="decision"' in html_text
+        assert '<input name="reason_code"' in html_text
+        assert '<textarea name="notes"' in html_text
+        assert 'data-decision="accept"' in html_text
+        assert 'data-decision="reject"' in html_text
+        assert 'data-decision="needs_review"' in html_text
         assert "Model classifier_v1 classified region region_1 as red." in html_text
 
         html_trace = runner.invoke(app, ["trace-claim", "claim_img_label_1", "--format", "html"])

@@ -164,14 +164,46 @@ def _format_json_cell(value: object) -> str:
     return json.dumps(value, sort_keys=True, ensure_ascii=False)
 
 
+def _review_controls(item: dict) -> str:
+    decisions = ("accept", "reject", "needs_review")
+    selected_decision = (
+        item.get("review_state") if item.get("review_state") in decisions else "needs_review"
+    )
+    reason_codes = item.get("reason_codes") or []
+    reason_code = reason_codes[0] if reason_codes else ""
+    options = "".join(
+        f'<option value="{decision}"{" selected" if decision == selected_decision else ""}>{decision}</option>'
+        for decision in decisions
+    )
+    return "".join(
+        [
+            f'<form class="review-actions" data-claim-id="{html.escape(_format_cell(item.get("claim_id")))}">',
+            f'<select name="decision" aria-label="Decision">{options}</select>',
+            (
+                '<input name="reason_code" aria-label="Reason code" '
+                f'value="{html.escape(_format_cell(reason_code))}">'
+            ),
+            '<textarea name="notes" aria-label="Reviewer notes" rows="2"></textarea>',
+            '<div class="action-buttons">',
+            '<button type="button" data-decision="accept">Accept</button>',
+            '<button type="button" data-decision="reject">Reject</button>',
+            '<button type="button" data-decision="needs_review">Needs review</button>',
+            "</div>",
+            "</form>",
+        ]
+    )
+
+
 def render_review_queue_html(queue_items: List[dict]) -> str:
     rows = []
     for item in queue_items:
         details = json.dumps(item, indent=2, sort_keys=True)
         normalized = _format_json_cell(item.get("normalized_claims"))
+        controls = _review_controls(item)
         rows.append(
             "<tr>"
             f"<td>{html.escape(_format_cell(item.get('review_state')))}</td>"
+            f"<td>{controls}</td>"
             f"<td>{html.escape(_format_cell(item.get('validation_status')))}</td>"
             f"<td>{html.escape(_format_cell(item.get('reason_codes')))}</td>"
             f"<td>{html.escape(_format_cell(item.get('source_file')))}</td>"
@@ -190,6 +222,7 @@ def render_review_queue_html(queue_items: List[dict]) -> str:
         "<table>",
         "<thead><tr>"
         "<th>Review</th>"
+        "<th>Action</th>"
         "<th>Validation</th>"
         "<th>Reasons</th>"
         "<th>Source</th>"
@@ -216,6 +249,10 @@ def render_review_queue_html(queue_items: List[dict]) -> str:
             "th,td{border:1px solid #d0d7de;padding:0.45rem 0.6rem;text-align:left;vertical-align:top;}",
             "th{background:#f6f8fa;}",
             "pre{white-space:pre-wrap;max-width:44rem;}",
+            ".review-actions{display:grid;gap:0.35rem;min-width:12rem;}",
+            ".review-actions select,.review-actions input,.review-actions textarea{font:inherit;max-width:100%;}",
+            ".action-buttons{display:flex;gap:0.35rem;flex-wrap:wrap;}",
+            ".action-buttons button{font:inherit;padding:0.25rem 0.45rem;}",
             "</style>",
             "</head>",
             "<body>",
