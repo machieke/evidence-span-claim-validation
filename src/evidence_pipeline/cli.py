@@ -62,7 +62,7 @@ from evidence_pipeline.validation.deterministic import VALIDATOR_VERSION, valida
 from evidence_pipeline.validation.pii import detect_pii, redact_pii
 from evidence_pipeline.validation.privacy import check_privacy_policy
 from evidence_pipeline.validation.repair import REPAIR_REASON_CODES, suggest_evidence_repairs
-from evidence_pipeline.validation.review import record_claim_review
+from evidence_pipeline.validation.review import record_claim_review, write_review_queue
 from evidence_pipeline.validation.schema_repair import import_raw_claim_candidates
 
 app = typer.Typer(help="Evidence-span claim validation pipeline.")
@@ -1050,6 +1050,23 @@ def review_claim_command(
     except ValueError as exc:
         raise typer.BadParameter(str(exc))
     typer.echo(f"review_id={result.review_id} created={result.created}")
+
+
+@app.command("review-queue")
+def review_queue_command(
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Optional JSONL output path."),
+    include_reviewed: bool = typer.Option(False, "--include-reviewed", help="Include already reviewed claims."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Write reviewable claim packets from validation and evidence artifacts."""
+    config = load_config(config_path)
+    _init_paths(config)
+    result = write_review_queue(
+        config,
+        output_path=output,
+        include_reviewed=include_reviewed,
+    )
+    typer.echo(f"{result.output_path} review_items={result.item_count}")
 
 
 @app.command("dedupe-claims")
