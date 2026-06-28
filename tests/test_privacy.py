@@ -90,9 +90,18 @@ def test_check_privacy_flags_external_provider_for_sensitive_source(tmp_path: Pa
         assert violations[0]["sensitive_metadata_keys"] == ["contains_pii", "local_only"]
         assert "Call Alice at 415-555-1212." not in output_text
 
+        jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
+        assert len(jobs) == 1
+        assert jobs[0]["stage"] == "check_privacy"
+        assert jobs[0]["model_id"] == "privacy.local_only.v1"
+        assert jobs[0]["input_record_ids"] == ["claims_raw", "sources"]
+        assert jobs[0]["metrics"] == {"claims_checked": 3, "violations": 1}
+
         report = runner.invoke(app, ["report"])
         assert report.exit_code == 0, report.stdout
         report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
+        assert "| jobs | 1 |" in report_text
+        assert "| check_privacy | 1 |" in report_text
         assert "| privacy_policy_violations | 1 |" in report_text
         assert "## Privacy Policy Violations" in report_text
         assert "| non_local_provider_for_sensitive_source | 1 |" in report_text

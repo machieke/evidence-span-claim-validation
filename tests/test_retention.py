@@ -71,9 +71,18 @@ def test_retention_plan_reports_old_raw_sources_without_deleting(tmp_path: Path)
         assert old_file.exists()
         assert current_file.exists()
 
+        jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
+        assert len(jobs) == 1
+        assert jobs[0]["stage"] == "retention_plan"
+        assert jobs[0]["model_id"] == "retention.plan.v1"
+        assert jobs[0]["input_record_ids"] == ["sources"]
+        assert jobs[0]["metrics"] == {"candidates": 1}
+
         report = runner.invoke(app, ["report"])
         assert report.exit_code == 0, report.stdout
         report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
+        assert "| jobs | 1 |" in report_text
+        assert "## Jobs By Stage" in report_text
         assert "| retention_plan | 1 |" in report_text
         assert "## Retention Plan Reasons" in report_text
         assert "| raw_source_retention_exceeded | 1 |" in report_text

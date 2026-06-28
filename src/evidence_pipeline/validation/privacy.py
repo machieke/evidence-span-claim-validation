@@ -13,6 +13,7 @@ from evidence_pipeline.schemas.sources import SourceRecord
 
 LOCAL_ONLY_POLICY = "local_only_sensitive_sources"
 NON_LOCAL_PROVIDER_REASON = "non_local_provider_for_sensitive_source"
+PRIVACY_CHECK_VERSION = "privacy.local_only.v1"
 
 
 @dataclass

@@ -36,7 +36,7 @@ from evidence_pipeline.normalization.claims import NORMALIZER_VERSION, normalize
 from evidence_pipeline.normalization.dedupe import dedupe_normalized_claims
 from evidence_pipeline.normalization.graph_export import export_graph_jsonl
 from evidence_pipeline.normalization.metta_export import export_metta
-from evidence_pipeline.retention import write_retention_plan
+from evidence_pipeline.retention import RETENTION_PLAN_VERSION, write_retention_plan
 from evidence_pipeline.reports.summary import write_summary_report
 from evidence_pipeline.reports.gold_eval import write_gold_eval_report
 from evidence_pipeline.reports.lineage import (
@@ -60,7 +60,7 @@ from evidence_pipeline.spans.rule_highlighter import (
 )
 from evidence_pipeline.validation.deterministic import VALIDATOR_VERSION, validate_raw_claims
 from evidence_pipeline.validation.pii import PII_PROCESSOR_VERSION, detect_pii, redact_pii
-from evidence_pipeline.validation.privacy import check_privacy_policy
+from evidence_pipeline.validation.privacy import PRIVACY_CHECK_VERSION, check_privacy_policy
 from evidence_pipeline.validation.repair import REPAIR_REASON_CODES, suggest_evidence_repairs
 from evidence_pipeline.validation.review import record_claim_review, write_review_queue
 from evidence_pipeline.validation.schema_repair import SCHEMA_REPAIR_VERSION, import_raw_claim_candidates
@@ -1232,6 +1232,17 @@ def check_privacy_command(
     config = load_config(config_path)
     _init_paths(config)
     result = check_privacy_policy(config, output_path=output)
+    record_job_result(
+        config,
+        stage="check_privacy",
+        input_record_ids=["claims_raw", "sources"],
+        model_id=PRIVACY_CHECK_VERSION,
+        metrics={
+            "claims_checked": result.claims_checked,
+            "violations": result.violation_count,
+        },
+        metadata={"output_path": str(result.output_path), "fail_on_violation": fail_on_violation},
+    )
     typer.echo(
         f"{result.output_path} claims_checked={result.claims_checked} "
         f"violations={result.violation_count}"
@@ -1249,6 +1260,14 @@ def retention_plan_command(
     config = load_config(config_path)
     _init_paths(config)
     result = write_retention_plan(config, output_path=output)
+    record_job_result(
+        config,
+        stage="retention_plan",
+        input_record_ids=["sources"],
+        model_id=RETENTION_PLAN_VERSION,
+        metrics={"candidates": result.candidate_count},
+        metadata={"output_path": str(result.output_path)},
+    )
     typer.echo(f"{result.output_path} candidates={result.candidate_count}")
 
 

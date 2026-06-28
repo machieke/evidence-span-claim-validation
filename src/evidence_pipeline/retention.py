@@ -11,6 +11,8 @@ from evidence_pipeline.jsonl import read_jsonl_records, write_jsonl
 from evidence_pipeline.schemas.reports import RetentionPlanRecord
 from evidence_pipeline.schemas.sources import SourceRecord
 
+RETENTION_PLAN_VERSION = "retention.plan.v1"
+
 
 @dataclass
 class RetentionPlanResult:
