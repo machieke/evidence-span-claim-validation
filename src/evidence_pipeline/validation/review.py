@@ -65,6 +65,9 @@ ANCHOR_KEYS_BY_MODALITY = {
         "mask_path",
         "feature_cluster_id",
         "member_region_ids",
+        "representative_region_ids",
+        "representative_crop_paths",
+        "representative_bboxes",
         "source_ids",
         "cluster_size",
         "cohesion_score",
@@ -379,6 +382,46 @@ def _time_fragment(anchor: dict) -> str:
     return f"#t={start_text},{end_text}"
 
 
+def _image_figure(href: str, alt: str, caption: str, css_class: str = "") -> str:
+    classes = "evidence-preview-image"
+    if css_class:
+        classes = f"{classes} {css_class}"
+    return "".join(
+        [
+            f'<figure class="{html.escape(classes, quote=True)}">',
+            f'<a href="{html.escape(href, quote=True)}">',
+            (
+                '<img loading="lazy" '
+                f'src="{html.escape(href, quote=True)}" '
+                f'alt="{html.escape(alt, quote=True)}">'
+            ),
+            "</a>",
+            f"<figcaption>{html.escape(caption)}</figcaption>",
+            "</figure>",
+        ]
+    )
+
+
+def _representative_crop_figures(anchor: dict, claim_id: str, base_path: Optional[Path]) -> List[str]:
+    crop_paths = anchor.get("representative_crop_paths")
+    if not isinstance(crop_paths, list):
+        return []
+    figures = []
+    for index, crop_path in enumerate(crop_paths, start=1):
+        if not crop_path:
+            continue
+        href = _asset_href(crop_path, base_path)
+        figures.append(
+            _image_figure(
+                href,
+                f"Representative crop {index} for {claim_id}",
+                f"representative {index}",
+                css_class="evidence-preview-representative",
+            )
+        )
+    return figures
+
+
 def _evidence_preview_block(item: dict, base_path: Optional[Path] = None) -> str:
     anchor = item.get("evidence_anchor") or {}
     if not isinstance(anchor, dict):
@@ -390,23 +433,23 @@ def _evidence_preview_block(item: dict, base_path: Optional[Path] = None) -> str
     if modality == "image":
         crop_path = anchor.get("crop_path")
         image_path = crop_path or source_file
+        figures = _representative_crop_figures(anchor, claim_id, base_path)
         if image_path:
             href = _asset_href(image_path, base_path)
             caption = "crop_path" if crop_path else "source_file"
-            return "".join(
-                [
-                    '<figure class="evidence-preview evidence-preview-image">',
-                    f'<a href="{html.escape(href, quote=True)}">',
-                    (
-                        '<img loading="lazy" '
-                        f'src="{html.escape(href, quote=True)}" '
-                        f'alt="Evidence crop for {html.escape(claim_id, quote=True)}">'
-                    ),
-                    "</a>",
-                    f"<figcaption>{html.escape(caption)}</figcaption>",
-                    "</figure>",
-                ]
-            )
+            alt = f"Evidence crop for {claim_id}" if crop_path else f"Source image for {claim_id}"
+            parts = [
+                _image_figure(href, alt, caption),
+                *figures,
+            ]
+            if crop_path and source_file:
+                source_href = _asset_href(source_file, base_path)
+                parts.append(
+                    f'<a href="{html.escape(source_href, quote=True)}">Open source image</a>'
+                )
+            return '<div class="evidence-preview">' + "".join(parts) + "</div>"
+        if figures:
+            return '<div class="evidence-preview">' + "".join(figures) + "</div>"
 
     if modality == "audio" and source_file:
         href = _asset_href(source_file, base_path) + _time_fragment(anchor)
@@ -511,6 +554,8 @@ def render_review_queue_html(queue_items: List[dict], base_path: Optional[Path] 
             ".review-commands{max-width:32rem;}",
             ".evidence-preview{display:grid;gap:0.25rem;margin:0;min-width:8rem;}",
             ".evidence-preview img{display:block;max-width:9rem;max-height:9rem;border:1px solid #d0d7de;object-fit:contain;}",
+            ".evidence-preview-image{margin:0;}",
+            ".evidence-preview-representative img{max-width:6rem;max-height:6rem;}",
             ".evidence-preview audio{max-width:12rem;}",
             ".evidence-preview figcaption{font-size:0.85rem;color:#57606a;}",
             ".evidence-preview-text{display:block;max-width:24rem;padding:0.2rem 0.35rem;background:#fff8c5;}",

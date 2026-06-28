@@ -358,6 +358,7 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
         assert "[0, 0, 16, 16]" in html_text
         assert '<img loading="lazy" src="../work/crops/region_1.png"' in html_text
         assert 'alt="Evidence crop for claim_img_label_1"' in html_text
+        assert "Open source image" in html_text
         assert "needs_visual_double_check" in html_text
         assert "color_only_classification" in html_text
         assert "low_visual_contrast" in html_text
@@ -496,3 +497,39 @@ def test_review_queue_html_renders_text_pdf_and_audio_previews():
     assert 'href="../raw/report.pdf#page=2">Open PDF evidence</a>' in html_text
     assert '<audio controls src="../raw/meeting.wav#t=0,2.5"></audio>' in html_text
     assert 'href="../raw/meeting.wav#t=0,2.5">Open audio clip</a>' in html_text
+
+
+def test_review_queue_html_renders_image_source_and_representatives():
+    html_text = render_review_queue_html(
+        [
+            {
+                "claim_id": "claim_cluster_1",
+                "source_modality": "image",
+                "review_state": "unreviewed",
+                "validation_status": "needs_review",
+                "reason_codes": [],
+                "warnings": [],
+                "risk_flags": [],
+                "source_file": "data/raw/source.png",
+                "source_faithful_claim": "Regions r1 and r2 were clustered as visually similar.",
+                "evidence_anchor": {
+                    "source_modality": "image",
+                    "source_file": "data/raw/source.png",
+                    "feature_cluster_id": "cluster_1",
+                    "crop_path": "data/work/crops/r1.png",
+                    "representative_crop_paths": [
+                        "data/work/crops/r1.png",
+                        "data/work/crops/r2.png",
+                    ],
+                },
+                "normalized_claims": [],
+                "review_commands": {},
+            },
+        ],
+        base_path=Path("data/reports"),
+    )
+
+    assert 'src="../work/crops/r1.png"' in html_text
+    assert 'href="../raw/source.png">Open source image</a>' in html_text
+    assert 'alt="Representative crop 1 for claim_cluster_1"' in html_text
+    assert 'alt="Representative crop 2 for claim_cluster_1"' in html_text

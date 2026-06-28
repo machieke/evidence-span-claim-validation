@@ -53,6 +53,12 @@ def test_image_region_clustering_emits_cluster_claims(tmp_path: Path):
             "visual_region",
             "visual_region",
         ]
+        cluster_evidence = next(record for record in evidence if record["evidence_type"] == "visual_cluster")
+        assert len(cluster_evidence["provenance"]["representative_crop_paths"]) == 2
+        assert all(
+            Path(crop_path).exists()
+            for crop_path in cluster_evidence["provenance"]["representative_crop_paths"]
+        )
 
         raw_claims = [payload for _, payload in read_jsonl(Path("data/jsonl/claims.raw.jsonl"))]
         assert len(raw_claims) == 3

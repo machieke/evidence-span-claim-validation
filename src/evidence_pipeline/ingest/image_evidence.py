@@ -67,6 +67,10 @@ def build_image_evidence(config: PipelineConfig, source_id: Optional[str] = None
 def build_image_cluster_evidence(config: PipelineConfig, source_id: Optional[str] = None) -> ImageEvidenceResult:
     paths = config.jsonl_paths()
     existing_ids = existing_values(paths["evidence"], "evidence_id")
+    regions_by_id = {
+        region.region_id: region
+        for _, region in read_jsonl_records(paths["image_regions"], ImageRegionRecord)
+    }
     created = 0
     skipped = 0
 
@@ -78,12 +82,23 @@ def build_image_cluster_evidence(config: PipelineConfig, source_id: Optional[str
             skipped += 1
             continue
         source_ids = cluster.source_ids or [cluster.feature_cluster_id]
+        representative_regions = [
+            regions_by_id[region_id]
+            for region_id in cluster.representative_region_ids
+            if region_id in regions_by_id
+        ]
+        representative_crop_paths = [
+            region.crop_path for region in representative_regions if region.crop_path
+        ]
+        representative_bboxes = [region.bbox for region in representative_regions]
         provenance: Dict[str, object] = {
             "feature_cluster_id": cluster.feature_cluster_id,
             "embedding_model": cluster.embedding_model,
             "clustering_method": cluster.clustering_method,
             "member_region_ids": cluster.member_region_ids,
             "representative_region_ids": cluster.representative_region_ids,
+            "representative_crop_paths": representative_crop_paths,
+            "representative_bboxes": representative_bboxes,
             "cluster_size": cluster.cluster_size,
             "cohesion_score": cluster.cohesion_score,
             "nearest_neighbor_margin": cluster.nearest_neighbor_margin,
