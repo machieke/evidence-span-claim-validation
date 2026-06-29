@@ -67,7 +67,7 @@ def test_run_chat_is_idempotent(tmp_path: Path):
             "chat_chunker.thread_window.v1",
             "chat_rules_v1",
             "rules.v1",
-            "deterministic.v8",
+            "deterministic.v9",
             "normalizer.v1",
             "graph.export.v1",
         ]
@@ -160,7 +160,7 @@ def test_run_images_is_idempotent(tmp_path: Path):
             "connected_components_color_distance_v1+color_rgb_mean_std_v1",
             "image_cluster_evidence.builder.v1",
             "image_region.rules.v1+image_cluster.rules.v1",
-            "deterministic.v8",
+            "deterministic.v9",
             "normalizer.v1",
             "graph.export.v1",
         ]

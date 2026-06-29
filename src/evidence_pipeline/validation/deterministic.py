@@ -21,11 +21,23 @@ from evidence_pipeline.validation.text_support import (
     unsupported_entities,
 )
 
-VALIDATOR_VERSION = "deterministic.v8"
+VALIDATOR_VERSION = "deterministic.v9"
 IMAGE_CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.85
 IMAGE_CLUSTER_MIN_COHESION = 0.75
 IMAGE_CLUSTER_MIN_SIZE = 5
 IMAGE_CLUSTER_MIN_SOURCE_COUNT = 3
+ENTITY_ALLOWED_PROVENANCE_KEYS = (
+    "sender_id",
+    "sender_display_name",
+    "speaker",
+    "speaker_label",
+    "image_id",
+    "region_id",
+    "feature_cluster_id",
+    "embedding_model",
+    "clustering_method",
+    "ocr_model",
+)
 
 
 @dataclass
@@ -282,6 +294,21 @@ def _quantities_preserved(claim: RawClaimRecord, support_text: str) -> bool:
     return bool(claim_quantities) and claim_quantities.issubset(evidence_quantities)
 
 
+def _allowed_entity_texts(
+    claim: RawClaimRecord,
+    evidence: Optional[EvidenceRecord],
+) -> List[str]:
+    allowed = [claim.attribution.agent or ""]
+    if evidence is None:
+        return allowed
+
+    for key in ENTITY_ALLOWED_PROVENANCE_KEYS:
+        value = evidence.provenance.get(key)
+        if isinstance(value, str):
+            allowed.append(value)
+    return allowed
+
+
 def validate_claim_deterministically(
     claim: RawClaimRecord,
     evidence: Optional[EvidenceRecord],
@@ -361,7 +388,7 @@ def validate_claim_deterministically(
     introduced_entities = unsupported_entities(
         claim_text,
         support_texts=support_texts,
-        allowed_texts=[claim.attribution.agent or ""],
+        allowed_texts=_allowed_entity_texts(claim, evidence),
     )
     if introduced_entities:
         warnings.append("unsupported_entities_introduced")

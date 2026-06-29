@@ -95,7 +95,7 @@ class ClaimValidationSummary(StrictModel):
     attribution_preserved: Optional[bool] = None
     quantities_preserved: Optional[bool] = None
     introduced_entities: List[str] = Field(default_factory=list)
-    validator_version: str = "deterministic.v8"
+    validator_version: str = "deterministic.v9"
 
 
 class ValidatedClaimRecord(StrictModel):
