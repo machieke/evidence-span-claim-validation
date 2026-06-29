@@ -150,7 +150,25 @@ def _is_reviewable_claim(claim: dict, validation: Optional[dict]) -> bool:
     return _reviewable_without_validation(claim)
 
 
-def _review_command(claim_id: str, decision: str, reason_codes: List[str]) -> str:
+def _normalized_claim_command_json(normalized_claims: List[dict]) -> Optional[str]:
+    if not normalized_claims:
+        return None
+    first = normalized_claims[0]
+    if not isinstance(first, dict):
+        return None
+    normalized_claim = first.get("normalized_claim")
+    if not isinstance(normalized_claim, dict):
+        return None
+    return json.dumps(normalized_claim, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def _review_command(
+    claim_id: str,
+    decision: str,
+    reason_codes: List[str],
+    corrected_claim: Optional[str] = None,
+    normalized_claim_json: Optional[str] = None,
+) -> str:
     args = [
         "python3",
         "-m",
@@ -164,12 +182,28 @@ def _review_command(claim_id: str, decision: str, reason_codes: List[str]) -> st
     ]
     for reason_code in reason_codes:
         args.extend(["--reason-code", reason_code])
+    if corrected_claim:
+        args.extend(["--corrected-claim", corrected_claim])
+    if normalized_claim_json:
+        args.extend(["--normalized-claim-json", normalized_claim_json])
     return " ".join(shlex.quote(str(arg)) for arg in args)
 
 
-def _review_commands(claim_id: str, reason_codes: List[str]) -> Dict[str, str]:
+def _review_commands(
+    claim_id: str,
+    reason_codes: List[str],
+    corrected_claim: Optional[str] = None,
+    normalized_claims: Optional[List[dict]] = None,
+) -> Dict[str, str]:
+    normalized_claim_json = _normalized_claim_command_json(normalized_claims or [])
     return {
-        decision: _review_command(claim_id, decision, reason_codes)
+        decision: _review_command(
+            claim_id,
+            decision,
+            reason_codes,
+            corrected_claim=corrected_claim,
+            normalized_claim_json=normalized_claim_json,
+        )
         for decision in ("accept", "reject", "needs_review")
     }
 
@@ -244,7 +278,12 @@ def _review_queue_item(
         warnings=validation_warnings,
         risk_flags=sorted(set(claim_risk_flags) | set(evidence_risk_flags)),
         review_state=latest_review.decision if latest_review else "unreviewed",
-        review_commands=_review_commands(claim_id, validation_errors),
+        review_commands=_review_commands(
+            claim_id,
+            validation_errors,
+            corrected_claim=claim.get("source_faithful_claim"),
+            normalized_claims=normalized_claims,
+        ),
         latest_review=latest_review.model_dump(mode="json") if latest_review else None,
     )
     return record.model_dump(mode="json", exclude_none=True)

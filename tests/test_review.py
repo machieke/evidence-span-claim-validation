@@ -325,11 +325,17 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
             "crop_path": "data/work/crops/region_1.png",
         }
         assert items[0]["normalized_claims"][0]["normalized_claim"]["predicate"] == "classified_as"
-        assert (
-            items[0]["review_commands"]["accept"]
-            == "python3 -m evidence_pipeline review-claim claim_img_label_1 --decision accept "
+        accept_command = items[0]["review_commands"]["accept"]
+        assert accept_command.startswith(
+            "python3 -m evidence_pipeline review-claim claim_img_label_1 --decision accept "
             "--reviewer-id human_reviewer --reason-code image_label_low_confidence"
         )
+        assert (
+            "--corrected-claim 'Model classifier_v1 classified region region_1 as red.'"
+            in accept_command
+        )
+        assert "--normalized-claim-json" in accept_command
+        assert '"truth_status":"model_observation_unverified"' in accept_command
         assert "review-claim claim_img_label_1 --decision reject" in items[0]["review_commands"]["reject"]
         assert (
             "--reason-code image_label_low_confidence"
@@ -411,6 +417,8 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
         assert 'data-decision="needs_review"' in html_text
         assert "review-claim claim_img_label_1 --decision accept" in html_text
         assert "--reason-code image_label_low_confidence" in html_text
+        assert "--corrected-claim" in html_text
+        assert "--normalized-claim-json" in html_text
         assert "Model classifier_v1 classified region region_1 as red." in html_text
 
         html_trace = runner.invoke(app, ["trace-claim", "claim_img_label_1", "--format", "html"])
