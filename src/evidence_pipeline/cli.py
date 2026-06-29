@@ -115,7 +115,7 @@ EVIDENCE_BUILDER_VERSIONS = {
 }
 CHUNKER_VERSIONS = {
     "chat": "chat_chunker.thread_window.v1",
-    "pdf": "pdf_chunker.page_block_token_fallback.v1",
+    "pdf": "pdf_chunker.section_page_block_token_fallback.v2",
     "audio": "audio_chunker.utterance_window.v1",
     "image_ocr": "image_ocr_chunker.single_evidence.v1",
 }

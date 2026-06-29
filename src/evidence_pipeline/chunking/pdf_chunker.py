@@ -24,6 +24,25 @@ def _sort_key(evidence: EvidenceRecord) -> Tuple[int, int, str]:
     )
 
 
+def _section_path(evidence: EvidenceRecord) -> Tuple[str, ...]:
+    value = evidence.provenance.get("section_path") or []
+    if isinstance(value, list):
+        return tuple(str(part) for part in value)
+    return (str(value),)
+
+
+def _section_paths(evidence_batch: List[EvidenceRecord]) -> List[List[str]]:
+    paths: List[List[str]] = []
+    seen = set()
+    for evidence in evidence_batch:
+        path = _section_path(evidence)
+        if not path or path in seen:
+            continue
+        paths.append(list(path))
+        seen.add(path)
+    return paths
+
+
 def _flush_chunk(
     config: PipelineConfig,
     evidence_batch: List[EvidenceRecord],
@@ -31,6 +50,7 @@ def _flush_chunk(
     target_tokens: int,
     overlap_tokens: int,
     existing_chunk_ids: set,
+    carry_overlap: bool = True,
 ) -> Tuple[int, List[str]]:
     if not evidence_batch:
         return 0, overlap_ids
@@ -46,9 +66,9 @@ def _flush_chunk(
         },
     )
     if chunk_id in existing_chunk_ids:
-        return 0, primary_ids[-1:]
+        return 0, primary_ids[-1:] if carry_overlap else []
     pages = sorted({record.provenance.get("page") for record in evidence_batch if record.provenance.get("page") is not None})
-    section_paths = [record.provenance.get("section_path") for record in evidence_batch if record.provenance.get("section_path")]
+    section_paths = _section_paths(evidence_batch)
     append_jsonl(
         paths["chunks"],
         ChunkRecord(
@@ -65,14 +85,14 @@ def _flush_chunk(
                 "section_paths": section_paths,
             },
             chunking_policy={
-                "strategy": "page_block_token_fallback",
+                "strategy": "section_page_block_token_fallback",
                 "target_tokens": target_tokens,
                 "overlap_tokens": overlap_tokens,
             },
         ),
     )
     existing_chunk_ids.add(chunk_id)
-    return 1, primary_ids[-1:]
+    return 1, primary_ids[-1:] if carry_overlap else []
 
 
 def chunk_pdf(config: PipelineConfig, source_id: Optional[str] = None, target_tokens: int = 1200, overlap_tokens: int = 150) -> PDFChunkResult:
@@ -95,16 +115,29 @@ def chunk_pdf(config: PipelineConfig, source_id: Optional[str] = None, target_to
         batch: List[EvidenceRecord] = []
         batch_chars = 0
         overlap_ids: List[str] = []
+        current_section: Tuple[str, ...] = ()
         for evidence in source_records:
             text_len = len(evidence.text or "")
-            if batch and batch_chars + text_len > char_budget:
-                count, overlap_ids = _flush_chunk(config, batch, overlap_ids, target_tokens, overlap_tokens, existing_chunk_ids)
+            section_path = _section_path(evidence)
+            section_changed = bool(batch) and section_path != current_section
+            budget_exceeded = bool(batch) and batch_chars + text_len > char_budget
+            if section_changed or budget_exceeded:
+                count, overlap_ids = _flush_chunk(
+                    config,
+                    batch,
+                    overlap_ids,
+                    target_tokens,
+                    overlap_tokens,
+                    existing_chunk_ids,
+                    carry_overlap=not section_changed,
+                )
                 if count:
                     created += count
                 else:
                     skipped += 1
                 batch = []
                 batch_chars = 0
+            current_section = section_path
             batch.append(evidence)
             batch_chars += text_len
         if batch:
