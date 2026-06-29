@@ -26,7 +26,13 @@ def test_review_claim_records_idempotent_decision_and_trace(tmp_path: Path):
             source_modality="image",
             evidence_type="visual_region",
             text=None,
-            provenance={"region_id": "region_1", "bbox": [0, 0, 16, 16]},
+            provenance={
+                "image_id": "src_img_1",
+                "region_id": "region_1",
+                "bbox": [0, 0, 16, 16],
+                "crop_path": "data/work/crops/region_1.png",
+                "proposal_method": "fixture_grid",
+            },
         )
         claim = RawClaimRecord(
             claim_id="claim_img_label_1",
@@ -240,9 +246,11 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
                 source_modality="image",
                 evidence_type="visual_region",
                 provenance={
+                    "image_id": "src_img_1",
                     "region_id": "region_1",
                     "bbox": [0, 0, 16, 16],
                     "crop_path": "data/work/crops/region_1.png",
+                    "proposal_method": "fixture_grid",
                 },
                 risk_flags=["low_visual_contrast"],
             ),
@@ -320,6 +328,7 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
             "source_file": "image.png",
             "evidence_id": "ev_img_1",
             "evidence_type": "visual_region",
+            "image_id": "src_img_1",
             "region_id": "region_1",
             "bbox": [0, 0, 16, 16],
             "crop_path": "data/work/crops/region_1.png",

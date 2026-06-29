@@ -21,7 +21,7 @@ from evidence_pipeline.validation.text_support import (
     unsupported_entities,
 )
 
-VALIDATOR_VERSION = "deterministic.v4"
+VALIDATOR_VERSION = "deterministic.v5"
 IMAGE_CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.85
 IMAGE_CLUSTER_MIN_COHESION = 0.75
 IMAGE_CLUSTER_MIN_SIZE = 5
@@ -185,6 +185,70 @@ def _audio_provenance_findings(
     return errors, warnings
 
 
+def _non_empty_list(value: object) -> bool:
+    return isinstance(value, list) and bool(value)
+
+
+def _valid_xywh_bbox(value: object) -> bool:
+    if not isinstance(value, list) or len(value) != 4:
+        return False
+    values = [_numeric_provenance(item) for item in value]
+    if any(item is None for item in values):
+        return False
+    x, y, width, height = values
+    return x >= 0 and y >= 0 and width > 0 and height > 0
+
+
+def _image_provenance_findings(
+    claim: RawClaimRecord,
+    evidence: Optional[EvidenceRecord],
+) -> Tuple[List[str], List[str]]:
+    if claim.source_modality != "image" or evidence is None:
+        return [], []
+
+    provenance = evidence.provenance
+    errors: List[str] = []
+    warnings: List[str] = []
+
+    if evidence.evidence_type == "visual_region":
+        if not _has_text_provenance(provenance.get("image_id")):
+            errors.append("missing_image_provenance")
+        if not _has_text_provenance(provenance.get("region_id")):
+            errors.append("missing_region_provenance")
+        if not _valid_xywh_bbox(provenance.get("bbox")):
+            errors.append("missing_image_bbox_provenance")
+        if not _has_text_provenance(provenance.get("proposal_method")):
+            errors.append("missing_region_proposal_provenance")
+        if not _has_text_provenance(provenance.get("crop_path")):
+            warnings.append("missing_region_crop_provenance")
+    elif evidence.evidence_type == "visual_cluster":
+        if not _has_text_provenance(provenance.get("feature_cluster_id")):
+            errors.append("missing_feature_cluster_provenance")
+        if not _has_text_provenance(provenance.get("embedding_model")):
+            errors.append("missing_embedding_model_provenance")
+        if not _has_text_provenance(provenance.get("clustering_method")):
+            errors.append("missing_clustering_method_provenance")
+        if not _non_empty_list(provenance.get("member_region_ids")):
+            errors.append("missing_cluster_member_provenance")
+        if not _non_empty_list(provenance.get("representative_region_ids")):
+            warnings.append("missing_cluster_representative_provenance")
+    elif evidence.evidence_type == "ocr_text_span":
+        if not _has_text_provenance(provenance.get("image_id")):
+            errors.append("missing_image_provenance")
+        if not _valid_xywh_bbox(provenance.get("bbox")):
+            errors.append("missing_image_bbox_provenance")
+        if not _has_text_provenance(provenance.get("ocr_model")):
+            errors.append("missing_ocr_model_provenance")
+        finding = _confidence_provenance_finding(provenance, "ocr_confidence")
+        if finding is not None:
+            if finding.startswith("missing_"):
+                warnings.append(finding)
+            else:
+                errors.append(finding)
+
+    return errors, warnings
+
+
 def _quantities_preserved(claim: RawClaimRecord, support_text: str) -> bool:
     evidence_quantities = extract_quantities(claim.evidence_text or support_text)
     claim_quantities = extract_quantities(_claim_text_for_checks(claim))
@@ -238,6 +302,9 @@ def validate_claim_deterministically(
     audio_provenance_errors, audio_provenance_warnings = _audio_provenance_findings(claim, evidence)
     errors.extend(audio_provenance_errors)
     warnings.extend(audio_provenance_warnings)
+    image_provenance_errors, image_provenance_warnings = _image_provenance_findings(claim, evidence)
+    errors.extend(image_provenance_errors)
+    warnings.extend(image_provenance_warnings)
     errors.extend(_audio_risk_errors(claim, evidence, span))
     errors.extend(_image_risk_errors(claim, evidence, review_decisions or []))
     errors.extend(_ocr_risk_errors(claim, evidence, span))

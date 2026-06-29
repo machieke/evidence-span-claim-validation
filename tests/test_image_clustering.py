@@ -113,10 +113,13 @@ def test_large_cross_source_visual_cluster_is_accepted(tmp_path: Path):
             text=None,
             provenance={
                 "feature_cluster_id": "cluster_1",
+                "embedding_model": "color_rgb_mean_std_v1",
+                "clustering_method": "connected_components_color_distance_v1",
                 "cluster_size": 5,
                 "cohesion_score": 0.91,
                 "source_ids": ["src_img_1", "src_img_2", "src_img_3"],
                 "member_region_ids": ["r1", "r2", "r3", "r4", "r5"],
+                "representative_region_ids": ["r1", "r2"],
             },
         )
         claim = RawClaimRecord(

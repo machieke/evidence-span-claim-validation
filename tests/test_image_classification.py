@@ -194,7 +194,13 @@ def test_human_confirmed_image_classification_bypasses_confidence_gate(tmp_path:
             source_modality="image",
             evidence_type="visual_region",
             text=None,
-            provenance={"region_id": "region_1", "bbox": [0, 0, 16, 16]},
+            provenance={
+                "image_id": "src_img_1",
+                "region_id": "region_1",
+                "bbox": [0, 0, 16, 16],
+                "crop_path": "data/work/crops/region_1.png",
+                "proposal_method": "fixture_grid",
+            },
         )
         claim = RawClaimRecord(
             claim_id="claim_img_label_human_confirmed",

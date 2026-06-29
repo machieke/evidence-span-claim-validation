@@ -154,7 +154,7 @@ def test_validate_claims_quarantines_missing_chat_provenance(tmp_path: Path):
             "missing_message_provenance",
             "missing_sender_provenance",
         ]
-        assert validations[0]["validator_version"] == "deterministic.v4"
+        assert validations[0]["validator_version"] == "deterministic.v5"
 
         quarantined = [payload for _, payload in read_jsonl(Path("data/jsonl/quarantine.jsonl"))]
         assert quarantined[0]["reason_codes"] == [
@@ -215,7 +215,7 @@ def test_validate_claims_quarantines_missing_audio_provenance(tmp_path: Path):
             "missing_asr_confidence_provenance",
             "missing_diarization_confidence_provenance",
         ]
-        assert validations[0]["validator_version"] == "deterministic.v4"
+        assert validations[0]["validator_version"] == "deterministic.v5"
 
         quarantined = [payload for _, payload in read_jsonl(Path("data/jsonl/quarantine.jsonl"))]
         assert quarantined[0]["reason_codes"] == [
@@ -226,6 +226,68 @@ def test_validate_claims_quarantines_missing_audio_provenance(tmp_path: Path):
         assert quarantined[0]["warnings"] == [
             "missing_asr_confidence_provenance",
             "missing_diarization_confidence_provenance",
+        ]
+
+
+def test_validate_claims_quarantines_missing_visual_region_provenance(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        init = runner.invoke(app, ["init"])
+        assert init.exit_code == 0
+
+        append_jsonl(
+            Path("data/jsonl/evidence.jsonl"),
+            EvidenceRecord(
+                evidence_id="ev_img_1",
+                source_id="src_img_1",
+                source_modality="image",
+                evidence_type="visual_region",
+                text=None,
+                provenance={},
+            ),
+        )
+        append_jsonl(
+            Path("data/jsonl/claims.raw.jsonl"),
+            RawClaimRecord(
+                claim_id="claim_missing_visual_region_provenance",
+                source_id="src_img_1",
+                source_modality="image",
+                evidence_id="ev_img_1",
+                claim_type="visual_region_proposal",
+                source_faithful_claim="Region region_1 was proposed as a visual region by grid_16_stride16.",
+                subject="region_1",
+                predicate="proposed_visual_region",
+                object={"bbox": [0, 0, 16, 16]},
+                modality="model_observation",
+                attribution={"type": "model", "agent": "grid_16_stride16"},
+                truth_status="model_observation_unverified",
+                confidence=0.5,
+            ),
+        )
+
+        result = runner.invoke(app, ["validate-claims"])
+
+        assert result.exit_code == 0, result.stdout
+        assert "claims_accepted=0" in result.stdout
+        assert "claims_quarantined=1" in result.stdout
+
+        validations = [payload for _, payload in read_jsonl(Path("data/jsonl/validations.jsonl"))]
+        assert validations[0]["errors"] == [
+            "missing_image_provenance",
+            "missing_region_provenance",
+            "missing_image_bbox_provenance",
+            "missing_region_proposal_provenance",
+        ]
+        assert validations[0]["warnings"] == [
+            "missing_region_crop_provenance",
+            "unsupported_entities_introduced",
+        ]
+        assert validations[0]["validator_version"] == "deterministic.v5"
+
+        quarantined = [payload for _, payload in read_jsonl(Path("data/jsonl/quarantine.jsonl"))]
+        assert quarantined[0]["reason_codes"] == validations[0]["errors"]
+        assert quarantined[0]["warnings"] == [
+            "missing_region_crop_provenance",
+            "unsupported_entities_introduced",
         ]
 
 
@@ -458,7 +520,7 @@ def test_validate_claims_enforces_pdf_provenance_requirements(tmp_path: Path):
             "missing_block_provenance",
             "missing_bbox_provenance",
         ]
-        assert validations["claim_pdf_bad"]["validator_version"] == "deterministic.v4"
+        assert validations["claim_pdf_bad"]["validator_version"] == "deterministic.v5"
         assert validations["claim_pdf_good"]["status"] == "accepted_extracted"
 
         quarantined = [payload for _, payload in read_jsonl(Path("data/jsonl/quarantine.jsonl"))]
