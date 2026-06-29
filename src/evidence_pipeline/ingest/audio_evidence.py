@@ -23,10 +23,17 @@ def _audio_evidence_id(utterance: AudioUtteranceRecord) -> str:
 def build_audio_evidence(config: PipelineConfig, source_id: Optional[str] = None) -> AudioEvidenceResult:
     paths = config.jsonl_paths()
     existing_ids = existing_values(paths["evidence"], "evidence_id")
+    utterances = [record for _, record in read_jsonl_records(paths["audio_utterances"], AudioUtteranceRecord)]
+    duration_by_source: Dict[str, float] = {}
+    for utterance in utterances:
+        duration_by_source[utterance.source_id] = max(
+            duration_by_source.get(utterance.source_id, 0.0),
+            utterance.end,
+        )
     created = 0
     skipped = 0
 
-    for _, utterance in read_jsonl_records(paths["audio_utterances"], AudioUtteranceRecord):
+    for utterance in utterances:
         if source_id is not None and utterance.source_id != source_id:
             continue
         evidence_id = _audio_evidence_id(utterance)
@@ -38,6 +45,7 @@ def build_audio_evidence(config: PipelineConfig, source_id: Optional[str] = None
             "speaker": utterance.speaker,
             "start": utterance.start,
             "end": utterance.end,
+            "source_duration": duration_by_source.get(utterance.source_id),
             "asr_confidence": utterance.asr_confidence,
             "diarization_confidence": utterance.diarization_confidence,
         }

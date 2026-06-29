@@ -21,7 +21,7 @@ from evidence_pipeline.validation.text_support import (
     unsupported_entities,
 )
 
-VALIDATOR_VERSION = "deterministic.v7"
+VALIDATOR_VERSION = "deterministic.v8"
 IMAGE_CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.85
 IMAGE_CLUSTER_MIN_COHESION = 0.75
 IMAGE_CLUSTER_MIN_SIZE = 5
@@ -172,6 +172,13 @@ def _audio_provenance_findings(
         errors.append("missing_audio_timestamp_provenance")
     elif start < 0 or end < start:
         errors.append("invalid_audio_timestamp_bounds")
+    duration = _numeric_provenance(provenance.get("source_duration", provenance.get("duration_seconds")))
+    if duration is None:
+        warnings.append("missing_audio_source_duration_provenance")
+    elif duration < 0:
+        errors.append("invalid_audio_source_duration_provenance")
+    elif start is not None and end is not None and end > duration:
+        errors.append("audio_timestamp_out_of_source_bounds")
 
     for key in ("asr_confidence", "diarization_confidence"):
         finding = _confidence_provenance_finding(provenance, key)

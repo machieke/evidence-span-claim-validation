@@ -123,9 +123,13 @@ def test_audio_transcript_pipeline_is_idempotent(tmp_path: Path):
             assert first.exit_code == 0, first.stdout
             assert second.exit_code == 0, second.stdout
 
-        assert len(list(read_jsonl(Path("data/jsonl/sources.jsonl")))) == 1
+        sources = [payload for _, payload in read_jsonl(Path("data/jsonl/sources.jsonl"))]
+        assert len(sources) == 1
+        assert sources[0]["metadata"]["duration_seconds"] == 8.0
         assert len(list(read_jsonl(Path("data/jsonl/audio_utterances.jsonl")))) == 3
-        assert len(list(read_jsonl(Path("data/jsonl/evidence.jsonl")))) == 3
+        evidence = [payload for _, payload in read_jsonl(Path("data/jsonl/evidence.jsonl"))]
+        assert len(evidence) == 3
+        assert {record["provenance"]["source_duration"] for record in evidence} == {8.0}
         assert len(list(read_jsonl(Path("data/jsonl/chunks.jsonl")))) == 3
 
         spans = [payload for _, payload in read_jsonl(Path("data/jsonl/spans.jsonl"))]

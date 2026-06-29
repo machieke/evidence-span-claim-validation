@@ -130,6 +130,11 @@ def ingest_audio_transcript(path: Path, config: PipelineConfig, metadata: Option
     sha256 = sha256_file(path)
     source_id = stable_id("src", {"modality": "audio", "sha256": sha256})
     paths = config.jsonl_paths()
+    records = [
+        _build_utterance(source_id, index, utterance, defaults)
+        for index, utterance in enumerate(utterances)
+    ]
+    duration_seconds = max((record.end for record in records), default=0.0)
     existing_sources = existing_values(paths["sources"], "source_id")
     source_created = source_id not in existing_sources
     if source_created:
@@ -140,17 +145,18 @@ def ingest_audio_transcript(path: Path, config: PipelineConfig, metadata: Option
                 source_modality="audio",
                 source_file=str(defaults.get("source_file") or path),
                 sha256=sha256,
-                metadata={**metadata, "utterance_count": len(utterances), "transcript_file": str(path)},
+                metadata={
+                    **metadata,
+                    "duration_seconds": duration_seconds,
+                    "utterance_count": len(utterances),
+                    "transcript_file": str(path),
+                },
             ),
         )
 
     existing_utterance_ids = existing_values(paths["audio_utterances"], "utterance_id")
     created = 0
     skipped = 0
-    records = [
-        _build_utterance(source_id, index, utterance, defaults)
-        for index, utterance in enumerate(utterances)
-    ]
     for record in _mark_overlapping_speech(records):
         if record.utterance_id in existing_utterance_ids:
             skipped += 1
