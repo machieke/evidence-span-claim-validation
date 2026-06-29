@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
@@ -18,6 +19,14 @@ from evidence_pipeline.validation.text_support import normalize_text_for_matchin
 
 REPAIR_SUGGESTION_VERSION = "claim.repair_suggestion.v1"
 REPAIR_APPLICATION_VERSION = "claim.repair_application.v1"
+_NORMALIZED_CHAR_REPLACEMENTS = {
+    "\u2018": "'",
+    "\u2019": "'",
+    "\u201c": '"',
+    "\u201d": '"',
+    "\u2013": "-",
+    "\u2014": "-",
+}
 
 
 @dataclass
@@ -52,6 +61,47 @@ def _candidate_support_texts(
     return candidates
 
 
+def _normalized_with_offsets(value: str) -> Tuple[str, List[Tuple[int, int]]]:
+    chars: List[str] = []
+    offsets: List[Tuple[int, int]] = []
+    pending_whitespace: Optional[Tuple[int, int]] = None
+
+    for index, char in enumerate(value):
+        normalized_chars = unicodedata.normalize("NFKC", char)
+        for source, target in _NORMALIZED_CHAR_REPLACEMENTS.items():
+            normalized_chars = normalized_chars.replace(source, target)
+        for normalized_char in normalized_chars:
+            if normalized_char.isspace():
+                if chars:
+                    if pending_whitespace is None:
+                        pending_whitespace = (index, index + 1)
+                    else:
+                        pending_whitespace = (pending_whitespace[0], index + 1)
+                continue
+            if pending_whitespace is not None:
+                chars.append(" ")
+                offsets.append(pending_whitespace)
+                pending_whitespace = None
+            chars.append(normalized_char)
+            offsets.append((index, index + 1))
+
+    return "".join(chars), offsets
+
+
+def _find_normalized_substring_repair(original: str, support_text: str) -> Optional[str]:
+    normalized_original = normalize_text_for_matching(original)
+    if not normalized_original:
+        return None
+    normalized_support, offsets = _normalized_with_offsets(support_text)
+    match_start = normalized_support.find(normalized_original)
+    if match_start < 0:
+        return None
+    match_end = match_start + len(normalized_original)
+    source_start = offsets[match_start][0]
+    source_end = offsets[match_end - 1][1]
+    return support_text[source_start:source_end]
+
+
 def _find_repair(original: str, support_text: str) -> Optional[str]:
     if original in support_text:
         return None
@@ -61,7 +111,7 @@ def _find_repair(original: str, support_text: str) -> Optional[str]:
     for segment in split_sentences(support_text):
         if normalized_original == normalize_text_for_matching(segment.text):
             return segment.text
-    return None
+    return _find_normalized_substring_repair(original, support_text)
 
 
 def suggest_evidence_repairs(

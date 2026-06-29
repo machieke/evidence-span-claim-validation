@@ -90,6 +90,43 @@ def test_repair_claims_suggests_exact_evidence_text(tmp_path: Path):
         assert "data/reports/claim_repairs.jsonl: checked 1 records" in artifact_check.stdout
 
 
+def test_repair_claims_suggests_normalized_substring_slice(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        init = runner.invoke(app, ["init"])
+        assert init.exit_code == 0
+        evidence = EvidenceRecord(
+            evidence_id="ev_1",
+            source_id="src_1",
+            source_modality="pdf",
+            evidence_type="text_span",
+            text="The report says \u201cHope\u201d sailed at 09:00 on Monday.",
+            provenance={"page": 1, "block_id": "block_1"},
+        )
+        claim = RawClaimRecord(
+            claim_id="claim_1",
+            source_id="src_1",
+            source_modality="pdf",
+            evidence_id="ev_1",
+            source_faithful_claim='The document states that "Hope" sailed at 09:00.',
+            modality="asserted",
+            evidence_text='"Hope" sailed at 09:00',
+            attribution={"type": "document", "agent": "src_1"},
+            truth_status="source_asserted_unverified",
+            confidence=0.8,
+        )
+        append_jsonl(Path("data/jsonl/evidence.jsonl"), evidence)
+        append_jsonl(Path("data/jsonl/claims.raw.jsonl"), claim)
+
+        result = runner.invoke(app, ["repair-claims"])
+
+        assert result.exit_code == 0, result.stdout
+        suggestions = [payload for _, payload in read_jsonl(Path("data/reports/claim_repairs.jsonl"))]
+        assert len(suggestions) == 1
+        assert suggestions[0]["original_evidence_text"] == '"Hope" sailed at 09:00'
+        assert suggestions[0]["suggested_evidence_text"] == "\u201cHope\u201d sailed at 09:00"
+        assert suggestions[0]["support_scope"] == "evidence"
+
+
 def test_apply_repairs_creates_audited_repaired_raw_claim(tmp_path: Path):
     with runner.isolated_filesystem(temp_dir=tmp_path):
         init = runner.invoke(app, ["init"])
