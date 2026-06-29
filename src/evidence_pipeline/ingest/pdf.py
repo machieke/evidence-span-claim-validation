@@ -33,6 +33,40 @@ class _ExtractedPDFBlock:
 
 PAGE_FURNITURE_MAX_CHARS = 120
 PAGE_FURNITURE_MIN_PAGES = 2
+SECTION_HEADING_MAX_CHARS = 120
+SECTION_HEADING_MAX_WORDS = 14
+_NUMBERED_HEADING_RE = re.compile(r"^(?P<number>\d+(?:\.\d+)+|\d+[.)])\s+(?P<title>.+)$")
+_APPENDIX_HEADING_RE = re.compile(
+    r"^(?:appendix|attachment|exhibit)\s+[A-Z0-9]+(?:[.: -]+.+)?$",
+    re.IGNORECASE,
+)
+_TITLE_HEADING_VERBS = {
+    "appears",
+    "are",
+    "caused",
+    "causes",
+    "contains",
+    "decreased",
+    "found",
+    "had",
+    "has",
+    "have",
+    "increased",
+    "indicates",
+    "is",
+    "measured",
+    "observed",
+    "recommended",
+    "reports",
+    "reported",
+    "requires",
+    "replaced",
+    "says",
+    "shows",
+    "uses",
+    "was",
+    "were",
+}
 
 
 def clean_pdf_text(text: str) -> Tuple[str, List[str]]:
@@ -89,6 +123,87 @@ def classify_repeated_pdf_furniture(blocks: List[_ExtractedPDFBlock]) -> Dict[Tu
             elif block.block_no == last_block_by_page.get(block.page):
                 furniture[(block.page, block.block_no)] = "footer"
     return furniture
+
+
+def _numbered_heading_level(number: str) -> int:
+    normalized = number.rstrip(".)")
+    return max(1, normalized.count(".") + 1)
+
+
+def _is_all_caps_heading(text: str) -> bool:
+    if text.endswith((".", "?", "!")):
+        return False
+    letters = [char for char in text if char.isalpha()]
+    if len(letters) < 3:
+        return False
+    upper_ratio = sum(char.isupper() for char in letters) / len(letters)
+    return upper_ratio >= 0.85
+
+
+def _looks_like_title_heading(text: str) -> bool:
+    if text.endswith((".", "?", "!")):
+        return False
+    words = re.findall(r"[A-Za-z][A-Za-z0-9'-]*", text)
+    if not 1 <= len(words) <= SECTION_HEADING_MAX_WORDS:
+        return False
+    lowered = {word.lower() for word in words}
+    if lowered & _TITLE_HEADING_VERBS:
+        return False
+    cased_words = [word for word in words if word[0].isalpha()]
+    uppercase_starts = sum(word[0].isupper() for word in cased_words)
+    return uppercase_starts >= max(1, len(cased_words) - 1)
+
+
+def _pdf_heading_candidate(text: str) -> Optional[Tuple[int, str]]:
+    cleaned, _ = clean_pdf_text(text)
+    if not cleaned or len(cleaned) > SECTION_HEADING_MAX_CHARS:
+        return None
+    if "\n\n" in cleaned:
+        return None
+
+    numbered = _NUMBERED_HEADING_RE.match(cleaned)
+    if numbered:
+        number = numbered.group("number")
+        title = numbered.group("title").strip()
+        if title and len(title.split()) <= SECTION_HEADING_MAX_WORDS:
+            return _numbered_heading_level(number), cleaned
+
+    if _APPENDIX_HEADING_RE.match(cleaned):
+        return 1, cleaned
+
+    if _is_all_caps_heading(cleaned):
+        return 1, cleaned
+
+    if _looks_like_title_heading(cleaned):
+        return 2, cleaned
+
+    return None
+
+
+def infer_pdf_section_paths(
+    blocks: List[_ExtractedPDFBlock],
+    furniture_blocks: Optional[Dict[Tuple[int, int], str]] = None,
+) -> Dict[Tuple[int, int], List[str]]:
+    furniture_blocks = furniture_blocks or {}
+    paths: Dict[Tuple[int, int], List[str]] = {}
+    section_stack: List[str] = []
+
+    for block in sorted(blocks, key=lambda item: (item.page, item.block_no)):
+        key = (block.page, block.block_no)
+        if furniture_blocks.get(key) in {"header", "footer"}:
+            paths[key] = []
+            continue
+
+        heading = _pdf_heading_candidate(block.text)
+        if heading is not None:
+            level, title = heading
+            if not section_stack and level > 1:
+                level = 1
+            section_stack = section_stack[: level - 1]
+            section_stack.append(title)
+        paths[key] = list(section_stack)
+
+    return paths
 
 
 def _extract_with_pymupdf(path: Path) -> Optional[List[_ExtractedPDFBlock]]:
@@ -157,6 +272,7 @@ def _record_from_block(
     block: _ExtractedPDFBlock,
     char_start: int,
     block_type: str = "text",
+    section_path: Optional[List[str]] = None,
 ) -> PDFBlockRecord:
     cleaned, cleanup_actions = clean_pdf_text(block.text)
     risk_flags = list(block.risk_flags)
@@ -186,6 +302,7 @@ def _record_from_block(
         bbox=block.bbox,
         char_start_document=char_start,
         char_end_document=char_start + len(cleaned),
+        section_path=section_path or [],
         extractor=block.extractor,
         risk_flags=sorted(set(risk_flags)),
     )
@@ -199,6 +316,7 @@ def ingest_pdf(path: Path, config: PipelineConfig, metadata: Optional[Dict[str, 
 
     blocks = _extract_blocks(path)
     furniture_blocks = classify_repeated_pdf_furniture(blocks)
+    section_paths = infer_pdf_section_paths(blocks, furniture_blocks)
     extractor = blocks[0].extractor if blocks else "none"
     existing_sources = existing_values(paths["sources"], "source_id")
     source_created = source_id not in existing_sources
@@ -225,6 +343,7 @@ def ingest_pdf(path: Path, config: PipelineConfig, metadata: Optional[Dict[str, 
             block,
             char_start,
             block_type=furniture_blocks.get((block.page, block.block_no), "text"),
+            section_path=section_paths.get((block.page, block.block_no), []),
         )
         char_start = (record.char_end_document or char_start) + 1
         if record.block_id in existing_block_ids:

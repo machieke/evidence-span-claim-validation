@@ -7,6 +7,7 @@ from evidence_pipeline.ingest.pdf import (
     _ExtractedPDFBlock,
     classify_repeated_pdf_furniture,
     clean_pdf_text,
+    infer_pdf_section_paths,
 )
 from evidence_pipeline.jsonl import append_jsonl, read_jsonl
 from evidence_pipeline.schemas.pdf import PDFBlockRecord
@@ -73,6 +74,59 @@ def test_classify_repeated_pdf_page_furniture():
         (2, 0): "header",
         (2, 2): "footer",
     }
+
+
+def test_infer_pdf_section_paths_from_numbered_headings():
+    blocks = [
+        _ExtractedPDFBlock(1, 0, "1. Inspection", None, "fixture", []),
+        _ExtractedPDFBlock(1, 1, "The vessel Hope had three masts.", None, "fixture", []),
+        _ExtractedPDFBlock(1, 2, "1.1 Engine Condition", None, "fixture", []),
+        _ExtractedPDFBlock(1, 3, "The engine was replaced in 2024.", None, "fixture", []),
+        _ExtractedPDFBlock(2, 0, "2. Recommendations", None, "fixture", []),
+        _ExtractedPDFBlock(2, 1, "The surveyor recommended a fuel inspection.", None, "fixture", []),
+        _ExtractedPDFBlock(2, 2, "THE ENGINE WAS REPLACED IN 2024.", None, "fixture", []),
+    ]
+
+    section_paths = infer_pdf_section_paths(blocks)
+
+    assert section_paths[(1, 0)] == ["1. Inspection"]
+    assert section_paths[(1, 1)] == ["1. Inspection"]
+    assert section_paths[(1, 2)] == ["1. Inspection", "1.1 Engine Condition"]
+    assert section_paths[(1, 3)] == ["1. Inspection", "1.1 Engine Condition"]
+    assert section_paths[(2, 0)] == ["2. Recommendations"]
+    assert section_paths[(2, 1)] == ["2. Recommendations"]
+    assert section_paths[(2, 2)] == ["2. Recommendations"]
+
+
+def test_ingest_pdf_infers_section_paths_into_evidence(monkeypatch, tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        init = runner.invoke(app, ["init"])
+        assert init.exit_code == 0
+        Path("report.pdf").write_bytes(b"fixture pdf")
+        monkeypatch.setattr(
+            "evidence_pipeline.ingest.pdf._extract_blocks",
+            lambda _: [
+                _ExtractedPDFBlock(1, 0, "1. Inspection", None, "fixture", []),
+                _ExtractedPDFBlock(1, 1, "1.1 Engine Condition", None, "fixture", []),
+                _ExtractedPDFBlock(1, 2, "The engine was replaced in 2024.", None, "fixture", []),
+            ],
+        )
+
+        ingest = runner.invoke(app, ["ingest-pdf", "report.pdf"])
+        assert ingest.exit_code == 0, ingest.stdout
+        assert "blocks_created=3" in ingest.stdout
+
+        blocks = [payload for _, payload in read_jsonl(Path("data/jsonl/pdf_blocks.jsonl"))]
+        assert blocks[0]["section_path"] == ["1. Inspection"]
+        assert blocks[1]["section_path"] == ["1. Inspection", "1.1 Engine Condition"]
+        assert blocks[2]["section_path"] == ["1. Inspection", "1.1 Engine Condition"]
+
+        evidence_result = runner.invoke(app, ["build-pdf-evidence"])
+        assert evidence_result.exit_code == 0, evidence_result.stdout
+
+        evidence = [payload for _, payload in read_jsonl(Path("data/jsonl/evidence.jsonl"))]
+        body_evidence = next(record for record in evidence if record["provenance"]["block_no"] == 2)
+        assert body_evidence["provenance"]["section_path"] == ["1. Inspection", "1.1 Engine Condition"]
 
 
 def test_pdf_header_footer_blocks_are_not_evidence(tmp_path: Path):
