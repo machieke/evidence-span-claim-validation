@@ -255,3 +255,93 @@ def test_validate_claims_quarantines_quantity_word_mismatch(tmp_path: Path):
         assert "| Attribution preservation rate | 100.0% |" in report_text
         assert "| Negation preservation rate | 100.0% |" in report_text
         assert "| Uncertainty preservation rate | 100.0% |" in report_text
+
+
+def test_validate_claims_enforces_pdf_provenance_requirements(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        init = runner.invoke(app, ["init"])
+        assert init.exit_code == 0
+
+        append_jsonl(
+            Path("data/jsonl/evidence.jsonl"),
+            EvidenceRecord(
+                evidence_id="ev_pdf_bad",
+                source_id="src_pdf_bad",
+                source_modality="pdf",
+                evidence_type="text_span",
+                text="The vessel Hope appears old.",
+                provenance={"extractor": "pymupdf"},
+            ),
+        )
+        append_jsonl(
+            Path("data/jsonl/evidence.jsonl"),
+            EvidenceRecord(
+                evidence_id="ev_pdf_good",
+                source_id="src_pdf_good",
+                source_modality="pdf",
+                evidence_type="text_span",
+                text="The surveyor found no active fuel leak.",
+                provenance={"page": 2, "block_id": "pdf_block_2", "extractor": "pypdf"},
+            ),
+        )
+        append_jsonl(
+            Path("data/jsonl/claims.raw.jsonl"),
+            RawClaimRecord(
+                claim_id="claim_pdf_bad",
+                source_id="src_pdf_bad",
+                source_modality="pdf",
+                evidence_id="ev_pdf_bad",
+                source_faithful_claim="The document states: The vessel Hope appears old.",
+                subject="vessel Hope",
+                predicate="appears",
+                object="old",
+                modality="uncertain_observation",
+                evidence_text="The vessel Hope appears old.",
+                attribution={"type": "document", "agent": "src_pdf_bad"},
+                truth_status="source_asserted_unverified",
+                confidence=0.9,
+            ),
+        )
+        append_jsonl(
+            Path("data/jsonl/claims.raw.jsonl"),
+            RawClaimRecord(
+                claim_id="claim_pdf_good",
+                source_id="src_pdf_good",
+                source_modality="pdf",
+                evidence_id="ev_pdf_good",
+                source_faithful_claim="The document states: The surveyor found no active fuel leak.",
+                subject="surveyor",
+                predicate="found",
+                object="no active fuel leak",
+                modality="negated",
+                evidence_text="The surveyor found no active fuel leak.",
+                attribution={"type": "document", "agent": "src_pdf_good"},
+                truth_status="source_asserted_unverified",
+                confidence=0.9,
+            ),
+        )
+
+        result = runner.invoke(app, ["validate-claims"])
+
+        assert result.exit_code == 0, result.stdout
+        assert "claims_accepted=1" in result.stdout
+        assert "claims_quarantined=1" in result.stdout
+
+        validations = {
+            payload["claim_id"]: payload
+            for _, payload in read_jsonl(Path("data/jsonl/validations.jsonl"))
+        }
+        assert validations["claim_pdf_bad"]["errors"] == [
+            "missing_page_provenance",
+            "missing_block_provenance",
+            "missing_bbox_provenance",
+        ]
+        assert validations["claim_pdf_bad"]["validator_version"] == "deterministic.v2"
+        assert validations["claim_pdf_good"]["status"] == "accepted_extracted"
+
+        quarantined = [payload for _, payload in read_jsonl(Path("data/jsonl/quarantine.jsonl"))]
+        assert quarantined[0]["reason_codes"] == [
+            "missing_page_provenance",
+            "missing_block_provenance",
+            "missing_bbox_provenance",
+        ]

@@ -21,7 +21,7 @@ from evidence_pipeline.validation.text_support import (
     unsupported_entities,
 )
 
-VALIDATOR_VERSION = "deterministic.v1"
+VALIDATOR_VERSION = "deterministic.v2"
 IMAGE_CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.85
 IMAGE_CLUSTER_MIN_COHESION = 0.75
 IMAGE_CLUSTER_MIN_SIZE = 5
@@ -92,6 +92,31 @@ def _validate_attribution(claim: RawClaimRecord, evidence: Optional[EvidenceReco
     return []
 
 
+def _valid_bbox(value: object) -> bool:
+    if not isinstance(value, list) or len(value) != 4:
+        return False
+    return all(isinstance(item, (int, float)) and not isinstance(item, bool) for item in value)
+
+
+def _pdf_provenance_errors(claim: RawClaimRecord, evidence: Optional[EvidenceRecord]) -> List[str]:
+    if claim.source_modality != "pdf" or evidence is None:
+        return []
+
+    provenance = evidence.provenance
+    errors: List[str] = []
+    page = provenance.get("page") or provenance.get("page_number")
+    if not isinstance(page, int) or isinstance(page, bool) or page < 1:
+        errors.append("missing_page_provenance")
+    if not provenance.get("block_id"):
+        errors.append("missing_block_provenance")
+
+    extractor = str(provenance.get("extractor") or "").lower()
+    if extractor == "pymupdf" and not _valid_bbox(provenance.get("bbox")):
+        errors.append("missing_bbox_provenance")
+
+    return errors
+
+
 def _quantities_preserved(claim: RawClaimRecord, support_text: str) -> bool:
     evidence_quantities = extract_quantities(claim.evidence_text or support_text)
     claim_quantities = extract_quantities(_claim_text_for_checks(claim))
@@ -140,6 +165,7 @@ def validate_claim_deterministically(
     attribution_errors = _validate_attribution(claim, evidence)
     errors.extend(attribution_errors)
     attribution_preserved = not attribution_errors
+    errors.extend(_pdf_provenance_errors(claim, evidence))
     errors.extend(_audio_risk_errors(claim, evidence, span))
     errors.extend(_image_risk_errors(claim, evidence, review_decisions or []))
     errors.extend(_ocr_risk_errors(claim, evidence, span))
