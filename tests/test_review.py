@@ -492,6 +492,81 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
         assert "review queue format must be jsonl or html" in invalid_format.stdout
 
 
+def test_review_queue_audio_anchor_uses_start_end(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        init = runner.invoke(app, ["init"])
+        assert init.exit_code == 0
+
+        append_jsonl(
+            Path("data/jsonl/sources.jsonl"),
+            SourceRecord(
+                source_id="src_audio_1",
+                source_modality="audio",
+                source_file="data/raw/meeting.wav",
+            ),
+        )
+        append_jsonl(
+            Path("data/jsonl/evidence.jsonl"),
+            EvidenceRecord(
+                evidence_id="ev_audio_1",
+                source_id="src_audio_1",
+                source_modality="audio",
+                evidence_type="utterance_span",
+                text="Hope departed at 09:00.",
+                provenance={
+                    "utterance_id": "utt_1",
+                    "speaker": "SPEAKER_00",
+                    "start": 1.25,
+                    "end": 2.5,
+                    "source_duration": 3.0,
+                    "asr_confidence": 0.95,
+                    "diarization_confidence": 0.9,
+                },
+            ),
+        )
+        append_jsonl(
+            Path("data/jsonl/claims.raw.jsonl"),
+            RawClaimRecord(
+                claim_id="claim_audio_1",
+                source_id="src_audio_1",
+                source_modality="audio",
+                evidence_id="ev_audio_1",
+                source_faithful_claim="The speaker asserted: Hope departed at 09:00.",
+                subject="Hope",
+                predicate="departed_at",
+                object="09:00",
+                modality="asserted",
+                evidence_text="Hope departed at 09:00.",
+                attribution={"type": "speaker", "agent": "SPEAKER_00"},
+                truth_status="speaker_asserted_unverified",
+                confidence=0.9,
+            ),
+        )
+        append_jsonl(
+            Path("data/jsonl/validations.jsonl"),
+            ValidationRecord(
+                validation_id="val_claim_audio_1",
+                claim_id="claim_audio_1",
+                record_id="claim_audio_1",
+                stage="validate_claims",
+                status="quarantined",
+                errors=["needs_audio_review"],
+            ),
+        )
+
+        queue = runner.invoke(app, ["review-queue"])
+        html_queue = runner.invoke(app, ["review-queue", "--format", "html"])
+
+        assert queue.exit_code == 0, queue.stdout
+        assert html_queue.exit_code == 0, html_queue.stdout
+        items = [payload for _, payload in read_jsonl(Path("data/reports/review_queue.jsonl"))]
+        assert items[0]["evidence_anchor"]["start"] == 1.25
+        assert items[0]["evidence_anchor"]["end"] == 2.5
+        assert items[0]["evidence_anchor"]["source_duration"] == 3.0
+        html_text = Path("data/reports/review_queue.html").read_text(encoding="utf-8")
+        assert 'href="../raw/meeting.wav#t=1.25,2.5">Open audio clip</a>' in html_text
+
+
 def test_review_queue_html_renders_text_pdf_and_audio_previews():
     html_text = render_review_queue_html(
         [
@@ -541,8 +616,8 @@ def test_review_queue_html_renders_text_pdf_and_audio_previews():
                 "evidence_anchor": {
                     "source_modality": "audio",
                     "source_file": "data/raw/meeting.wav",
-                    "start_ms": 0,
-                    "end_ms": 2500,
+                    "start": 0,
+                    "end": 2.5,
                 },
                 "normalized_claims": [],
                 "review_commands": {},

@@ -49,10 +49,13 @@ ANCHOR_KEYS_BY_MODALITY = {
         "utterance_id",
         "speaker",
         "speaker_label",
+        "start",
+        "end",
         "start_seconds",
         "end_seconds",
         "start_ms",
         "end_ms",
+        "source_duration",
         "asr_confidence",
         "diarization_confidence",
         "overlap",
@@ -440,6 +443,10 @@ def _time_value(anchor: dict, seconds_key: str, milliseconds_key: str) -> object
 def _time_fragment(anchor: dict) -> str:
     start = _time_value(anchor, "start_seconds", "start_ms")
     end = _time_value(anchor, "end_seconds", "end_ms")
+    if start is None:
+        start = anchor.get("start")
+    if end is None:
+        end = anchor.get("end")
     if start is None and end is None:
         return ""
     start_text = "" if start is None else str(start)
