@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from evidence_pipeline.config import PipelineConfig
 from evidence_pipeline.ids import stable_id
@@ -21,7 +21,7 @@ from evidence_pipeline.validation.text_support import (
     unsupported_entities,
 )
 
-VALIDATOR_VERSION = "deterministic.v3"
+VALIDATOR_VERSION = "deterministic.v4"
 IMAGE_CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.85
 IMAGE_CLUSTER_MIN_COHESION = 0.75
 IMAGE_CLUSTER_MIN_SIZE = 5
@@ -136,6 +136,55 @@ def _chat_provenance_errors(claim: RawClaimRecord, evidence: Optional[EvidenceRe
     return errors
 
 
+def _numeric_provenance(value: object) -> Optional[float]:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    return None
+
+
+def _confidence_provenance_finding(provenance: Dict[str, object], key: str) -> Optional[str]:
+    if key not in provenance:
+        return f"missing_{key}_provenance"
+    value = _numeric_provenance(provenance.get(key))
+    if value is None or not 0 <= value <= 1:
+        return f"invalid_{key}_provenance"
+    return None
+
+
+def _audio_provenance_findings(
+    claim: RawClaimRecord,
+    evidence: Optional[EvidenceRecord],
+) -> Tuple[List[str], List[str]]:
+    if claim.source_modality != "audio" or evidence is None:
+        return [], []
+
+    provenance = evidence.provenance
+    errors: List[str] = []
+    warnings: List[str] = []
+    if not _has_text_provenance(provenance.get("utterance_id")):
+        errors.append("missing_utterance_provenance")
+    if not _has_text_provenance(provenance.get("speaker")):
+        errors.append("missing_speaker_provenance")
+
+    start = _numeric_provenance(provenance.get("start", provenance.get("start_seconds")))
+    end = _numeric_provenance(provenance.get("end", provenance.get("end_seconds")))
+    if start is None or end is None:
+        errors.append("missing_audio_timestamp_provenance")
+    elif start < 0 or end < start:
+        errors.append("invalid_audio_timestamp_bounds")
+
+    for key in ("asr_confidence", "diarization_confidence"):
+        finding = _confidence_provenance_finding(provenance, key)
+        if finding is None:
+            continue
+        if finding.startswith("missing_"):
+            warnings.append(finding)
+        else:
+            errors.append(finding)
+
+    return errors, warnings
+
+
 def _quantities_preserved(claim: RawClaimRecord, support_text: str) -> bool:
     evidence_quantities = extract_quantities(claim.evidence_text or support_text)
     claim_quantities = extract_quantities(_claim_text_for_checks(claim))
@@ -186,6 +235,9 @@ def validate_claim_deterministically(
     attribution_preserved = not attribution_errors
     errors.extend(_pdf_provenance_errors(claim, evidence))
     errors.extend(_chat_provenance_errors(claim, evidence))
+    audio_provenance_errors, audio_provenance_warnings = _audio_provenance_findings(claim, evidence)
+    errors.extend(audio_provenance_errors)
+    warnings.extend(audio_provenance_warnings)
     errors.extend(_audio_risk_errors(claim, evidence, span))
     errors.extend(_image_risk_errors(claim, evidence, review_decisions or []))
     errors.extend(_ocr_risk_errors(claim, evidence, span))

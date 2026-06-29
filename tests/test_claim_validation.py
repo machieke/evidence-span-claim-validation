@@ -154,13 +154,78 @@ def test_validate_claims_quarantines_missing_chat_provenance(tmp_path: Path):
             "missing_message_provenance",
             "missing_sender_provenance",
         ]
-        assert validations[0]["validator_version"] == "deterministic.v3"
+        assert validations[0]["validator_version"] == "deterministic.v4"
 
         quarantined = [payload for _, payload in read_jsonl(Path("data/jsonl/quarantine.jsonl"))]
         assert quarantined[0]["reason_codes"] == [
             "missing_conversation_provenance",
             "missing_message_provenance",
             "missing_sender_provenance",
+        ]
+
+
+def test_validate_claims_quarantines_missing_audio_provenance(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        init = runner.invoke(app, ["init"])
+        assert init.exit_code == 0
+
+        append_jsonl(
+            Path("data/jsonl/evidence.jsonl"),
+            EvidenceRecord(
+                evidence_id="ev_audio_1",
+                source_id="src_audio_1",
+                source_modality="audio",
+                evidence_type="utterance_span",
+                text="Hope departed at 09:00.",
+                provenance={},
+            ),
+        )
+        append_jsonl(
+            Path("data/jsonl/claims.raw.jsonl"),
+            RawClaimRecord(
+                claim_id="claim_missing_audio_provenance",
+                source_id="src_audio_1",
+                source_modality="audio",
+                evidence_id="ev_audio_1",
+                source_faithful_claim="The speaker asserted that Hope departed at 09:00.",
+                subject="Hope",
+                predicate="departed_at",
+                object="09:00",
+                modality="asserted",
+                evidence_text="Hope departed at 09:00.",
+                attribution={"type": "speaker", "agent": "SPEAKER_00"},
+                truth_status="speaker_asserted_unverified",
+                confidence=0.82,
+            ),
+        )
+
+        result = runner.invoke(app, ["validate-claims"])
+
+        assert result.exit_code == 0, result.stdout
+        assert "claims_accepted=0" in result.stdout
+        assert "claims_quarantined=1" in result.stdout
+
+        validations = [payload for _, payload in read_jsonl(Path("data/jsonl/validations.jsonl"))]
+        assert validations[0]["errors"] == [
+            "missing_utterance_provenance",
+            "missing_speaker_provenance",
+            "missing_audio_timestamp_provenance",
+        ]
+        assert validations[0]["warnings"] == [
+            "missing_asr_confidence_provenance",
+            "missing_diarization_confidence_provenance",
+        ]
+        assert validations[0]["validator_version"] == "deterministic.v4"
+
+        quarantined = [payload for _, payload in read_jsonl(Path("data/jsonl/quarantine.jsonl"))]
+        assert quarantined[0]["reason_codes"] == [
+            "missing_utterance_provenance",
+            "missing_speaker_provenance",
+            "missing_audio_timestamp_provenance",
+        ]
+        assert quarantined[0]["warnings"] == [
+            "missing_asr_confidence_provenance",
+            "missing_diarization_confidence_provenance",
         ]
 
 
@@ -393,7 +458,7 @@ def test_validate_claims_enforces_pdf_provenance_requirements(tmp_path: Path):
             "missing_block_provenance",
             "missing_bbox_provenance",
         ]
-        assert validations["claim_pdf_bad"]["validator_version"] == "deterministic.v3"
+        assert validations["claim_pdf_bad"]["validator_version"] == "deterministic.v4"
         assert validations["claim_pdf_good"]["status"] == "accepted_extracted"
 
         quarantined = [payload for _, payload in read_jsonl(Path("data/jsonl/quarantine.jsonl"))]
