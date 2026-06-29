@@ -42,6 +42,7 @@ def test_seed_demo_artifacts_finalizes_acceptance_ready_dataset(tmp_path: Path):
         assert "failed_checks=0" in finalize.stdout
         assert "gold_eval=data/reports/gold_eval.md" in finalize.stdout
         assert "gold_claims=10" in finalize.stdout
+        assert "artifact_failures=0" in finalize.stdout
 
         checks = _rows("data/reports/acceptance_check.jsonl")
         assert checks

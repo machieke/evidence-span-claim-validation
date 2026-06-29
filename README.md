@@ -23,7 +23,6 @@ Demo acceptance dataset:
 ```bash
 PYTHONPATH=src python3 -m evidence_pipeline seed-demo-artifacts
 PYTHONPATH=src python3 -m evidence_pipeline finalize-run --gold data/reports/demo_gold.json
-PYTHONPATH=src python3 -m evidence_pipeline validate-artifacts --include-reports
 ```
 
 Chat pipeline:

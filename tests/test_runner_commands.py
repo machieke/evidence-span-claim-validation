@@ -91,6 +91,7 @@ def test_finalize_run_writes_acceptance_outputs_idempotently(tmp_path: Path):
         assert second.exit_code == 0, second.stdout
         assert "passed=True" in first.stdout
         assert "failed_checks=0" in first.stdout
+        assert "artifact_failures=0" in first.stdout
         assert "sqlite=data/reports/pipeline.sqlite" in first.stdout
 
         checks = [payload for _, payload in read_jsonl(Path("data/reports/acceptance_check.jsonl"))]

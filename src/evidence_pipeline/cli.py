@@ -7,6 +7,7 @@ from typing import List, Optional, Tuple
 import typer
 from pydantic import ValidationError
 
+from evidence_pipeline.artifact_validation import ArtifactValidationResult, validate_known_artifacts
 from evidence_pipeline.chunking.chat_chunker import chunk_chat
 from evidence_pipeline.chunking.audio_chunker import chunk_audio
 from evidence_pipeline.chunking.image_ocr_chunker import chunk_image_ocr
@@ -650,6 +651,14 @@ def _record_gold_eval_job(config: PipelineConfig, gold_file: Path, result) -> No
             "output_path": str(result.output_path),
         },
     )
+
+
+def _echo_artifact_validation_result(result: ArtifactValidationResult, verbose: bool = True) -> None:
+    for file_result in result.files:
+        for error in file_result.errors:
+            typer.echo(error, err=True)
+        if verbose:
+            typer.echo(f"{file_result.path}: checked {file_result.records_checked} records")
 
 
 @app.command("init")
@@ -1843,6 +1852,11 @@ def export_sqlite_command(
 @app.command("finalize-run")
 def finalize_run_command(
     gold_file: Optional[Path] = typer.Option(None, "--gold", help="Optional gold claims JSON file to evaluate."),
+    validate_outputs: bool = typer.Option(
+        True,
+        "--validate-artifacts/--no-validate-artifacts",
+        help="Validate core and report JSONL artifacts before exporting SQLite.",
+    ),
     sqlite: bool = typer.Option(True, "--sqlite/--no-sqlite", help="Also export a SQLite snapshot."),
     config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
 ) -> None:
@@ -1864,7 +1878,14 @@ def finalize_run_command(
     acceptance_result = write_acceptance_report(config)
     failed_checks = _record_acceptance_check_job(config, acceptance_result)
     summary_result = write_summary_report(config)
-    sqlite_result = export_sqlite(config) if sqlite else None
+    artifact_validation_result = validate_known_artifacts(config, include_reports=True) if validate_outputs else None
+    if artifact_validation_result is not None:
+        _echo_artifact_validation_result(artifact_validation_result, verbose=False)
+    sqlite_result = (
+        export_sqlite(config)
+        if sqlite and (artifact_validation_result is None or artifact_validation_result.failures == 0)
+        else None
+    )
 
     message = (
         f"graph={graph_result.output_path} graph_edges={graph_result.edge_count} "
@@ -1876,6 +1897,12 @@ def finalize_run_command(
             f"{message} gold_eval={gold_result.output_path} "
             f"gold_claims={gold_result.metrics['gold_claims']}"
         )
+    if artifact_validation_result is not None:
+        message = (
+            f"{message} artifact_paths={len(artifact_validation_result.files)} "
+            f"artifact_records={artifact_validation_result.records_checked} "
+            f"artifact_failures={artifact_validation_result.failures}"
+        )
     if sqlite_result is not None:
         message = (
             f"{message} sqlite={sqlite_result.output_path} "
@@ -1883,7 +1910,9 @@ def finalize_run_command(
             f"sqlite_records={sum(sqlite_result.table_counts.values())}"
         )
     typer.echo(message)
-    if not acceptance_result.passed:
+    if not acceptance_result.passed or (
+        artifact_validation_result is not None and artifact_validation_result.failures
+    ):
         raise typer.Exit(code=1)
 
 
@@ -2278,73 +2307,9 @@ def validate_artifacts(
 ) -> None:
     """Validate known JSONL artifacts that exist in the configured data directory."""
     config = load_config(config_path)
-    schema_by_key = {
-        "sources": "source",
-        "chat_messages": "chat_message",
-        "pdf_blocks": "pdf_block",
-        "audio_utterances": "audio_utterance",
-        "images": "image",
-        "image_regions": "image_region",
-        "image_region_embeddings": "image_region_embedding",
-        "image_feature_clusters": "image_feature_cluster",
-        "evidence": "evidence",
-        "chunks": "chunk",
-        "spans": "span",
-        "claims_raw": "claim.raw",
-        "validations": "validation",
-        "claims_validated": "claim.validated",
-        "claims_normalized": "claim.normalized",
-        "jobs": "job",
-        "review_decisions": "review_decision",
-        "audit_events": "audit_event",
-        "errors": "error",
-        "quarantine": "quarantine",
-    }
-    report_schema_by_key = {
-        "claim_graph": "claim_graph",
-        "claim_duplicates": "claim_duplicates",
-        "claim_repairs": "claim_repairs",
-        "gold_eval": "gold_eval",
-        "model_routing": "model_routing",
-        "pii_findings": "pii_findings",
-        "pii_redactions": "pii_redactions",
-        "privacy_policy_violations": "privacy_policy_violations",
-        "retention_plan": "retention_plan",
-        "review_queue": "review_queue",
-        "acceptance_check": "acceptance_check",
-    }
-    failures = 0
-
-    def validate_path(path: Path, schema: str) -> None:
-        nonlocal failures
-        model = SCHEMA_REGISTRY[schema]
-        count = 0
-        try:
-            for line_number, payload in read_jsonl(path):
-                try:
-                    model.model_validate(payload)
-                except ValidationError as exc:
-                    typer.echo(f"{path}:{line_number}: {exc}", err=True)
-                    failures += 1
-                count += 1
-        except JSONLDecodeError as exc:
-            typer.echo(str(exc), err=True)
-            failures += 1
-        typer.echo(f"{path}: checked {count} records")
-
-    for key, path in config.jsonl_paths().items():
-        schema = schema_by_key.get(key)
-        if schema is None or not path.exists():
-            continue
-        validate_path(path, schema)
-
-    if include_reports:
-        for key, schema in report_schema_by_key.items():
-            path = config.paths.reports_dir / f"{key}.jsonl"
-            if not path.exists():
-                continue
-            validate_path(path, schema)
-    if failures:
+    result = validate_known_artifacts(config, include_reports=include_reports)
+    _echo_artifact_validation_result(result)
+    if result.failures:
         raise typer.Exit(code=1)
 
 
