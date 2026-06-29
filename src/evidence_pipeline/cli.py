@@ -143,6 +143,19 @@ SPAN_STAGE_MODALITIES = {
     "detect_audio_spans": "audio",
     "detect_image_ocr_spans": "image",
 }
+ACCEPTANCE_CHECK_INPUT_IDS = [
+    "sources",
+    "evidence",
+    "chunks",
+    "spans",
+    "image_regions",
+    "claims_raw",
+    "validations",
+    "claims_validated",
+    "claims_normalized",
+    "quarantine",
+    "reports:extraction_summary",
+]
 
 
 def _parse_metadata(values: Optional[List[str]]) -> dict:
@@ -580,6 +593,30 @@ def _record_normalize_claims_job(
         model_id=NORMALIZER_VERSION,
         metrics={"claims_normalized": result.created, "claims_skipped": result.skipped},
     )
+
+
+def _record_graph_export_job(config: PipelineConfig, result, output_format: str = "jsonl") -> None:
+    record_job_result(
+        config,
+        stage="export_graph",
+        input_record_ids=["claims_normalized"],
+        model_id=GRAPH_EXPORT_VERSION,
+        metrics={"edges": result.edge_count},
+        metadata={"format": output_format, "output_path": str(result.output_path)},
+    )
+
+
+def _record_acceptance_check_job(config: PipelineConfig, result) -> int:
+    failed_checks = sum(1 for check in result.checks if check["status"] == "failed")
+    record_job_result(
+        config,
+        stage="acceptance_check",
+        input_record_ids=ACCEPTANCE_CHECK_INPUT_IDS,
+        model_id=ACCEPTANCE_CHECK_VERSION,
+        metrics={"checks": len(result.checks), "failed_checks": failed_checks},
+        metadata={"output_path": str(result.output_path), "passed": result.passed},
+    )
+    return failed_checks
 
 
 @app.command("init")
@@ -1654,27 +1691,7 @@ def acceptance_check_command(
     config = load_config(config_path)
     _init_paths(config)
     result = write_acceptance_report(config, output_path=output)
-    failed_checks = sum(1 for check in result.checks if check["status"] == "failed")
-    record_job_result(
-        config,
-        stage="acceptance_check",
-        input_record_ids=[
-            "sources",
-            "evidence",
-            "chunks",
-            "spans",
-            "image_regions",
-            "claims_raw",
-            "validations",
-            "claims_validated",
-            "claims_normalized",
-            "quarantine",
-            "reports:extraction_summary",
-        ],
-        model_id=ACCEPTANCE_CHECK_VERSION,
-        metrics={"checks": len(result.checks), "failed_checks": failed_checks},
-        metadata={"output_path": str(result.output_path), "passed": result.passed},
-    )
+    failed_checks = _record_acceptance_check_job(config, result)
     typer.echo(f"{result.output_path} checks={len(result.checks)} failed_checks={failed_checks} passed={result.passed}")
     if not result.passed:
         raise typer.Exit(code=1)
@@ -1740,14 +1757,7 @@ def export_graph_command(
     config = load_config(config_path)
     _init_paths(config)
     result = export_graph_jsonl(config, output_path=output)
-    record_job_result(
-        config,
-        stage="export_graph",
-        input_record_ids=["claims_normalized"],
-        model_id=GRAPH_EXPORT_VERSION,
-        metrics={"edges": result.edge_count},
-        metadata={"format": format, "output_path": str(result.output_path)},
-    )
+    _record_graph_export_job(config, result, output_format=format)
     typer.echo(f"{result.output_path} edges={result.edge_count}")
 
 
@@ -1764,6 +1774,38 @@ def export_sqlite_command(
         f"{result.output_path} tables={len(result.table_counts)} "
         f"records={sum(result.table_counts.values())}"
     )
+
+
+@app.command("finalize-run")
+def finalize_run_command(
+    sqlite: bool = typer.Option(True, "--sqlite/--no-sqlite", help="Also export a SQLite snapshot."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Produce final graph, reports, acceptance checks, and optional SQLite snapshot."""
+    config = load_config(config_path)
+    _init_paths(config)
+    graph_result = export_graph_jsonl(config)
+    _record_graph_export_job(config, graph_result)
+    write_summary_report(config)
+    acceptance_result = write_acceptance_report(config)
+    failed_checks = _record_acceptance_check_job(config, acceptance_result)
+    summary_result = write_summary_report(config)
+    sqlite_result = export_sqlite(config) if sqlite else None
+
+    message = (
+        f"graph={graph_result.output_path} graph_edges={graph_result.edge_count} "
+        f"report={summary_result.output_path} acceptance={acceptance_result.output_path} "
+        f"failed_checks={failed_checks} passed={acceptance_result.passed}"
+    )
+    if sqlite_result is not None:
+        message = (
+            f"{message} sqlite={sqlite_result.output_path} "
+            f"sqlite_tables={len(sqlite_result.table_counts)} "
+            f"sqlite_records={sum(sqlite_result.table_counts.values())}"
+        )
+    typer.echo(message)
+    if not acceptance_result.passed:
+        raise typer.Exit(code=1)
 
 
 @app.command("export-metta")

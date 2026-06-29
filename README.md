@@ -42,6 +42,8 @@ PYTHONPATH=src python3 -m evidence_pipeline export-metta
 PYTHONPATH=src python3 -m evidence_pipeline dedupe-claims
 PYTHONPATH=src python3 -m evidence_pipeline report
 PYTHONPATH=src python3 -m evidence_pipeline report --format html
+PYTHONPATH=src python3 -m evidence_pipeline acceptance-check
+PYTHONPATH=src python3 -m evidence_pipeline finalize-run
 PYTHONPATH=src python3 -m evidence_pipeline review-claim claim_... --decision accept --reviewer-id reviewer_1
 PYTHONPATH=src python3 -m evidence_pipeline review-queue
 PYTHONPATH=src python3 -m evidence_pipeline review-queue --format html
@@ -115,6 +117,7 @@ PYTHONPATH=src python3 -m evidence_pipeline run-chat data/raw/chat/export.json
 PYTHONPATH=src python3 -m evidence_pipeline run-pdf data/raw/pdf/report.pdf
 PYTHONPATH=src python3 -m evidence_pipeline run-audio-transcript data/raw/audio/transcript.json
 PYTHONPATH=src python3 -m evidence_pipeline run-images data/raw/images/
+PYTHONPATH=src python3 -m evidence_pipeline finalize-run
 ```
 
 Generic stage commands:

@@ -11,30 +11,34 @@ from evidence_pipeline.jsonl import read_jsonl
 runner = CliRunner()
 
 
+def _write_runner_chat_export(path: Path) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "conversation_id": "conv_runner",
+                "messages": [
+                    {
+                        "id": "msg_1",
+                        "sender_id": "alice",
+                        "timestamp": "2026-06-24T08:00:00Z",
+                        "text": "Did Hope have masts?",
+                    },
+                    {
+                        "id": "msg_2",
+                        "sender_id": "bob",
+                        "timestamp": "2026-06-24T08:01:00Z",
+                        "text": "Hope had three masts.",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_run_chat_is_idempotent(tmp_path: Path):
     with runner.isolated_filesystem(temp_dir=tmp_path):
-        Path("chat.json").write_text(
-            json.dumps(
-                {
-                    "conversation_id": "conv_runner",
-                    "messages": [
-                        {
-                            "id": "msg_1",
-                            "sender_id": "alice",
-                            "timestamp": "2026-06-24T08:00:00Z",
-                            "text": "Did Hope have masts?",
-                        },
-                        {
-                            "id": "msg_2",
-                            "sender_id": "bob",
-                            "timestamp": "2026-06-24T08:01:00Z",
-                            "text": "Hope had three masts.",
-                        },
-                    ],
-                }
-            ),
-            encoding="utf-8",
-        )
+        _write_runner_chat_export(Path("chat.json"))
 
         first = runner.invoke(app, ["run-chat", "chat.json", "--previous-messages", "1"])
         second = runner.invoke(app, ["run-chat", "chat.json", "--previous-messages", "1"])
@@ -70,6 +74,38 @@ def test_run_chat_is_idempotent(tmp_path: Path):
         assert Path("data/reports/extraction_summary.md").exists()
         report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
         assert "| jobs | 7 |" in report_text
+
+
+def test_finalize_run_writes_acceptance_outputs_idempotently(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        _write_runner_chat_export(Path("chat.json"))
+        run = runner.invoke(app, ["run-chat", "chat.json", "--previous-messages", "1"])
+        assert run.exit_code == 0, run.stdout
+
+        first = runner.invoke(app, ["finalize-run"])
+        second = runner.invoke(app, ["finalize-run"])
+
+        assert first.exit_code == 0, first.stdout
+        assert second.exit_code == 0, second.stdout
+        assert "passed=True" in first.stdout
+        assert "failed_checks=0" in first.stdout
+        assert "sqlite=data/reports/pipeline.sqlite" in first.stdout
+
+        checks = [payload for _, payload in read_jsonl(Path("data/reports/acceptance_check.jsonl"))]
+        assert checks
+        assert {check["status"] for check in checks} == {"passed"}
+        assert Path("data/reports/pipeline.sqlite").exists()
+
+        report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
+        assert "## Acceptance Checks" in report_text
+        assert "| acceptance_check |" in report_text
+
+        jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
+        assert [job["stage"] for job in jobs].count("export_graph") == 1
+        assert [job["stage"] for job in jobs].count("acceptance_check") == 1
+
+        artifact_check = runner.invoke(app, ["validate-artifacts", "--include-reports"])
+        assert artifact_check.exit_code == 0, artifact_check.stdout
 
 
 def test_run_images_is_idempotent(tmp_path: Path):
