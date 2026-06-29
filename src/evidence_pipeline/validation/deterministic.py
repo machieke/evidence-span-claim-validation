@@ -21,7 +21,7 @@ from evidence_pipeline.validation.text_support import (
     unsupported_entities,
 )
 
-VALIDATOR_VERSION = "deterministic.v5"
+VALIDATOR_VERSION = "deterministic.v6"
 IMAGE_CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.85
 IMAGE_CLUSTER_MIN_COHESION = 0.75
 IMAGE_CLUSTER_MIN_SIZE = 5
@@ -249,6 +249,24 @@ def _image_provenance_findings(
     return errors, warnings
 
 
+def _context_dependency_errors(
+    claim: RawClaimRecord,
+    evidence: Optional[EvidenceRecord],
+    span: Optional[SpanRecord],
+) -> List[str]:
+    if claim.source_modality not in {"chat", "audio"}:
+        return []
+    risk_flags = set(_combined_risk_flags(claim, evidence, span))
+    if "context_dependent_coreference" not in risk_flags:
+        return []
+    errors: List[str] = []
+    if not claim.context_dependent:
+        errors.append("context_dependency_not_flagged")
+    if not claim.context_used:
+        errors.append("missing_context_used")
+    return errors
+
+
 def _quantities_preserved(claim: RawClaimRecord, support_text: str) -> bool:
     evidence_quantities = extract_quantities(claim.evidence_text or support_text)
     claim_quantities = extract_quantities(_claim_text_for_checks(claim))
@@ -305,6 +323,7 @@ def validate_claim_deterministically(
     image_provenance_errors, image_provenance_warnings = _image_provenance_findings(claim, evidence)
     errors.extend(image_provenance_errors)
     warnings.extend(image_provenance_warnings)
+    errors.extend(_context_dependency_errors(claim, evidence, span))
     errors.extend(_audio_risk_errors(claim, evidence, span))
     errors.extend(_image_risk_errors(claim, evidence, review_decisions or []))
     errors.extend(_ocr_risk_errors(claim, evidence, span))
