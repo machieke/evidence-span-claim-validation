@@ -18,6 +18,14 @@ PYTHONPATH=src python3 -m evidence_pipeline register-source data/raw/chat/export
 PYTHONPATH=src python3 -m evidence_pipeline validate-artifacts
 ```
 
+Demo acceptance dataset:
+
+```bash
+PYTHONPATH=src python3 -m evidence_pipeline seed-demo-artifacts
+PYTHONPATH=src python3 -m evidence_pipeline finalize-run
+PYTHONPATH=src python3 -m evidence_pipeline validate-artifacts --include-reports
+```
+
 Chat pipeline:
 
 ```bash

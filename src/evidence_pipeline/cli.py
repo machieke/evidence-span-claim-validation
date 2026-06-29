@@ -12,6 +12,7 @@ from evidence_pipeline.chunking.audio_chunker import chunk_audio
 from evidence_pipeline.chunking.image_ocr_chunker import chunk_image_ocr
 from evidence_pipeline.chunking.pdf_chunker import chunk_pdf
 from evidence_pipeline.config import PipelineConfig, load_config
+from evidence_pipeline.demo import DEMO_SEED_VERSION, seed_demo_artifacts
 from evidence_pipeline.extraction.claim_extractor import (
     IMAGE_CLUSTER_EXTRACTOR_VERSION,
     IMAGE_REGION_EXTRACTOR_VERSION,
@@ -627,6 +628,28 @@ def init_command(
     config = load_config(config_path)
     _init_paths(config)
     typer.echo(f"initialized {config.paths.data_dir}")
+
+
+@app.command("seed-demo-artifacts")
+def seed_demo_artifacts_command(
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Seed deterministic multimodal demo artifacts for acceptance and finalization."""
+    config = load_config(config_path)
+    _init_paths(config)
+    result = seed_demo_artifacts(config)
+    record_job_result(
+        config,
+        stage="seed_demo_artifacts",
+        input_record_ids=["demo:multimodal_acceptance_v1"],
+        model_id=DEMO_SEED_VERSION,
+        metrics={"records_created": result.created, "records_skipped": result.skipped},
+        metadata={"artifact_counts": result.artifact_counts},
+    )
+    typer.echo(
+        f"records_created={result.created} records_skipped={result.skipped} "
+        f"artifacts={len(result.artifact_counts)}"
+    )
 
 
 @app.command("register-source")
