@@ -1375,6 +1375,7 @@ def run_chat_command(
     _record_validate_claims_job(config, ingest_result.source_id, None, validation_result)
     _record_normalize_claims_job(config, ingest_result.source_id, None, normalization_result)
     graph_result = export_graph_jsonl(config)
+    _record_graph_export_job(config, graph_result)
     report_result = write_summary_report(config)
     typer.echo(
         f"source_id={ingest_result.source_id} messages_created={ingest_result.messages_created} "
@@ -1435,6 +1436,7 @@ def run_pdf_command(
     _record_validate_claims_job(config, ingest_result.source_id, None, validation_result)
     _record_normalize_claims_job(config, ingest_result.source_id, None, normalization_result)
     graph_result = export_graph_jsonl(config)
+    _record_graph_export_job(config, graph_result)
     report_result = write_summary_report(config)
     typer.echo(
         f"source_id={ingest_result.source_id} blocks_created={ingest_result.blocks_created} "
@@ -1492,6 +1494,7 @@ def run_audio_transcript_command(
     _record_validate_claims_job(config, ingest_result.source_id, None, validation_result)
     _record_normalize_claims_job(config, ingest_result.source_id, None, normalization_result)
     graph_result = export_graph_jsonl(config)
+    _record_graph_export_job(config, graph_result)
     report_result = write_summary_report(config)
     typer.echo(
         f"source_id={ingest_result.source_id} utterances_created={ingest_result.utterances_created} "
@@ -1579,6 +1582,7 @@ def run_images_command(
         claims_accepted += validation_result.accepted
         claims_normalized += normalization_result.created
     graph_result = export_graph_jsonl(config)
+    _record_graph_export_job(config, graph_result)
     report_result = write_summary_report(config)
     typer.echo(
         f"sources_created={ingest_result.sources_created} images_created={ingest_result.images_created} "

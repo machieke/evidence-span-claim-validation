@@ -59,6 +59,7 @@ def test_run_chat_is_idempotent(tmp_path: Path):
             "extract_claims",
             "validate_claims",
             "normalize_claims",
+            "export_graph",
         ]
         assert [job["model_id"] for job in jobs] == [
             "chat.ingest.v1",
@@ -68,12 +69,13 @@ def test_run_chat_is_idempotent(tmp_path: Path):
             "rules.v1",
             "deterministic.v1",
             "normalizer.v1",
+            "graph.export.v1",
         ]
-        assert len({job["source_id"] for job in jobs}) == 1
+        assert len({job.get("source_id") for job in jobs if job.get("source_id") is not None}) == 1
         assert jobs[2]["input_record_ids"][:2] == ["policy:max_tokens=1200", "policy:previous_messages=1"]
         assert Path("data/reports/extraction_summary.md").exists()
         report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
-        assert "| jobs | 7 |" in report_text
+        assert "| jobs | 8 |" in report_text
 
 
 def test_finalize_run_writes_acceptance_outputs_idempotently(tmp_path: Path):
@@ -146,6 +148,7 @@ def test_run_images_is_idempotent(tmp_path: Path):
             "extract_claims",
             "validate_claims",
             "normalize_claims",
+            "export_graph",
         ]
         assert [job["model_id"] for job in jobs] == [
             "image.ingest.v1",
@@ -157,10 +160,11 @@ def test_run_images_is_idempotent(tmp_path: Path):
             "image_region.rules.v1+image_cluster.rules.v1",
             "deterministic.v1",
             "normalizer.v1",
+            "graph.export.v1",
         ]
-        assert len({job["source_id"] for job in jobs}) == 1
+        assert len({job.get("source_id") for job in jobs if job.get("source_id") is not None}) == 1
         assert jobs[1]["metrics"] == {"regions_created": 1, "regions_skipped": 0}
         assert jobs[4]["metrics"] == {"clustered_regions": 0, "clusters_created": 0, "clusters_skipped": 1}
         assert Path("data/reports/extraction_summary.md").exists()
         report_text = Path("data/reports/extraction_summary.md").read_text(encoding="utf-8")
-        assert "| jobs | 9 |" in report_text
+        assert "| jobs | 10 |" in report_text
