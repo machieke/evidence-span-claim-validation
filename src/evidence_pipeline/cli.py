@@ -620,6 +620,38 @@ def _record_acceptance_check_job(config: PipelineConfig, result) -> int:
     return failed_checks
 
 
+def _gold_eval_metrics(result) -> dict:
+    return {
+        "gold_claims": result.metrics["gold_claims"],
+        "accepted_precision": result.metrics["accepted_precision"],
+        "accepted_recall": result.metrics["accepted_recall"],
+        "quarantine_precision": result.metrics["quarantine_precision"],
+        "quarantine_recall": result.metrics["quarantine_recall"],
+        "evidence_exact_match_rate": result.metrics["evidence_exact_match_rate"],
+        "attribution_preservation_rate": result.metrics["attribution_preservation_rate"],
+        "uncertainty_preservation_rate": result.metrics["uncertainty_preservation_rate"],
+        "negation_preservation_rate": result.metrics["negation_preservation_rate"],
+        "quantity_preservation_rate": result.metrics["quantity_preservation_rate"],
+        "unsupported_entity_rate": result.metrics["unsupported_entity_rate"],
+        "quarantine_rate": result.metrics["quarantine_rate"],
+    }
+
+
+def _record_gold_eval_job(config: PipelineConfig, gold_file: Path, result) -> None:
+    record_job_result(
+        config,
+        stage="eval_gold",
+        input_record_ids=["claims_validated", "quarantine", f"gold:{gold_file}"],
+        model_id=GOLD_EVAL_VERSION,
+        metrics=_gold_eval_metrics(result),
+        metadata={
+            "gold_path": str(gold_file),
+            "metrics_path": str(result.metrics_path),
+            "output_path": str(result.output_path),
+        },
+    )
+
+
 @app.command("init")
 def init_command(
     config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
@@ -1810,14 +1842,24 @@ def export_sqlite_command(
 
 @app.command("finalize-run")
 def finalize_run_command(
+    gold_file: Optional[Path] = typer.Option(None, "--gold", help="Optional gold claims JSON file to evaluate."),
     sqlite: bool = typer.Option(True, "--sqlite/--no-sqlite", help="Also export a SQLite snapshot."),
     config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
 ) -> None:
-    """Produce final graph, reports, acceptance checks, and optional SQLite snapshot."""
+    """Produce final graph, optional gold eval, reports, acceptance checks, and SQLite snapshot."""
     config = load_config(config_path)
     _init_paths(config)
+    if gold_file is not None and (not gold_file.exists() or not gold_file.is_file()):
+        raise typer.BadParameter(f"gold file does not exist: {gold_file}")
     graph_result = export_graph_jsonl(config)
     _record_graph_export_job(config, graph_result)
+    gold_result = None
+    if gold_file is not None:
+        try:
+            gold_result = write_gold_eval_report(config, gold_file)
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc))
+        _record_gold_eval_job(config, gold_file, gold_result)
     write_summary_report(config)
     acceptance_result = write_acceptance_report(config)
     failed_checks = _record_acceptance_check_job(config, acceptance_result)
@@ -1829,6 +1871,11 @@ def finalize_run_command(
         f"report={summary_result.output_path} acceptance={acceptance_result.output_path} "
         f"failed_checks={failed_checks} passed={acceptance_result.passed}"
     )
+    if gold_result is not None:
+        message = (
+            f"{message} gold_eval={gold_result.output_path} "
+            f"gold_claims={gold_result.metrics['gold_claims']}"
+        )
     if sqlite_result is not None:
         message = (
             f"{message} sqlite={sqlite_result.output_path} "
@@ -1875,31 +1922,7 @@ def eval_gold_command(
         result = write_gold_eval_report(config, gold_file, output_path=output)
     except ValueError as exc:
         raise typer.BadParameter(str(exc))
-    record_job_result(
-        config,
-        stage="eval_gold",
-        input_record_ids=["claims_validated", "quarantine", f"gold:{gold_file}"],
-        model_id=GOLD_EVAL_VERSION,
-        metrics={
-            "gold_claims": result.metrics["gold_claims"],
-            "accepted_precision": result.metrics["accepted_precision"],
-            "accepted_recall": result.metrics["accepted_recall"],
-            "quarantine_precision": result.metrics["quarantine_precision"],
-            "quarantine_recall": result.metrics["quarantine_recall"],
-            "evidence_exact_match_rate": result.metrics["evidence_exact_match_rate"],
-            "attribution_preservation_rate": result.metrics["attribution_preservation_rate"],
-            "uncertainty_preservation_rate": result.metrics["uncertainty_preservation_rate"],
-            "negation_preservation_rate": result.metrics["negation_preservation_rate"],
-            "quantity_preservation_rate": result.metrics["quantity_preservation_rate"],
-            "unsupported_entity_rate": result.metrics["unsupported_entity_rate"],
-            "quarantine_rate": result.metrics["quarantine_rate"],
-        },
-        metadata={
-            "gold_path": str(gold_file),
-            "metrics_path": str(result.metrics_path),
-            "output_path": str(result.output_path),
-        },
-    )
+    _record_gold_eval_job(config, gold_file, result)
     typer.echo(
         f"{result.output_path} accepted_precision={result.metrics['accepted_precision']} "
         f"accepted_recall={result.metrics['accepted_recall']} "

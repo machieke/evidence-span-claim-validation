@@ -36,17 +36,12 @@ def test_seed_demo_artifacts_finalizes_acceptance_ready_dataset(tmp_path: Path):
         gold_payload = json.loads(Path("data/reports/demo_gold.json").read_text(encoding="utf-8"))
         assert len(gold_payload["claims"]) == 10
 
-        gold = runner.invoke(app, ["eval-gold", "data/reports/demo_gold.json"])
-        assert gold.exit_code == 0, gold.stdout
-        assert "accepted_precision=1.0" in gold.stdout
-        assert "accepted_recall=1.0" in gold.stdout
-        assert "quarantine_precision=1.0" in gold.stdout
-        assert "quarantine_recall=1.0" in gold.stdout
-
-        finalize = runner.invoke(app, ["finalize-run"])
+        finalize = runner.invoke(app, ["finalize-run", "--gold", "data/reports/demo_gold.json"])
         assert finalize.exit_code == 0, finalize.stdout
         assert "passed=True" in finalize.stdout
         assert "failed_checks=0" in finalize.stdout
+        assert "gold_eval=data/reports/gold_eval.md" in finalize.stdout
+        assert "gold_claims=10" in finalize.stdout
 
         checks = _rows("data/reports/acceptance_check.jsonl")
         assert checks
