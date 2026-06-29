@@ -28,6 +28,7 @@ REPORT_JSONL_FILES = {
     "privacy_policy_violations": "privacy_policy_violations.jsonl",
     "retention_plan": "retention_plan.jsonl",
     "review_queue": "review_queue.jsonl",
+    "acceptance_check": "acceptance_check.jsonl",
 }
 
 
@@ -527,6 +528,7 @@ def render_summary_markdown(config: PipelineConfig) -> Tuple[str, Dict[str, int]
     )
     lines.extend(_counter_table("Review Decisions", "Decision", _count_by(artifacts["review_decisions"], "decision")))
     lines.extend(_counter_table("Review Queue By State", "State", _count_by(artifacts["review_queue"], "review_state")))
+    lines.extend(_counter_table("Acceptance Checks", "Status", _count_by(artifacts["acceptance_check"], "status")))
     lines.extend(
         _counter_table(
             "Review Queue Reasons",

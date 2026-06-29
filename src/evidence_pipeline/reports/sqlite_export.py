@@ -40,6 +40,7 @@ ARTIFACT_KEY_FIELDS = {
     "privacy_policy_violations": "violation_id",
     "retention_plan": "retention_id",
     "review_queue": "review_queue_id",
+    "acceptance_check": "check_id",
 }
 
 REPORT_JSONL_FILES = {
@@ -53,6 +54,7 @@ REPORT_JSONL_FILES = {
     "privacy_policy_violations": "privacy_policy_violations.jsonl",
     "retention_plan": "retention_plan.jsonl",
     "review_queue": "review_queue.jsonl",
+    "acceptance_check": "acceptance_check.jsonl",
 }
 
 

@@ -38,6 +38,7 @@ from evidence_pipeline.normalization.graph_export import GRAPH_EXPORT_VERSION, e
 from evidence_pipeline.normalization.metta_export import METTA_EXPORT_VERSION, export_metta
 from evidence_pipeline.retention import RETENTION_PLAN_VERSION, write_retention_plan
 from evidence_pipeline.reports.summary import write_summary_report
+from evidence_pipeline.reports.acceptance import ACCEPTANCE_CHECK_VERSION, write_acceptance_report
 from evidence_pipeline.reports.gold_eval import GOLD_EVAL_VERSION, write_gold_eval_report
 from evidence_pipeline.reports.lineage import (
     default_claim_trace_html_path,
@@ -1644,6 +1645,41 @@ def report_command(
     typer.echo(str(result.output_path))
 
 
+@app.command("acceptance-check")
+def acceptance_check_command(
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Acceptance check JSONL output path."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Write and enforce the definition-of-done acceptance check report."""
+    config = load_config(config_path)
+    _init_paths(config)
+    result = write_acceptance_report(config, output_path=output)
+    failed_checks = sum(1 for check in result.checks if check["status"] == "failed")
+    record_job_result(
+        config,
+        stage="acceptance_check",
+        input_record_ids=[
+            "sources",
+            "evidence",
+            "chunks",
+            "spans",
+            "image_regions",
+            "claims_raw",
+            "validations",
+            "claims_validated",
+            "claims_normalized",
+            "quarantine",
+            "reports:extraction_summary",
+        ],
+        model_id=ACCEPTANCE_CHECK_VERSION,
+        metrics={"checks": len(result.checks), "failed_checks": failed_checks},
+        metadata={"output_path": str(result.output_path), "passed": result.passed},
+    )
+    typer.echo(f"{result.output_path} checks={len(result.checks)} failed_checks={failed_checks} passed={result.passed}")
+    if not result.passed:
+        raise typer.Exit(code=1)
+
+
 @app.command("route-models")
 def route_models_command(
     stage: str = typer.Option("all", "--stage", help="Routing stage: all, extraction, or validation."),
@@ -2178,6 +2214,7 @@ def validate_artifacts(
         "privacy_policy_violations": "privacy_policy_violations",
         "retention_plan": "retention_plan",
         "review_queue": "review_queue",
+        "acceptance_check": "acceptance_check",
     }
     failures = 0
 

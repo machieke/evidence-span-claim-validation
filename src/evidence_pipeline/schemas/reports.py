@@ -259,6 +259,34 @@ class ClaimDuplicateGroupRecord(StrictModel):
         return self
 
 
+class AcceptanceCheckRecord(StrictModel):
+    check_id: str
+    description: str
+    status: Literal["passed", "failed"]
+    total: int
+    failed: int
+    details: List[Dict[str, Any]] = Field(default_factory=list)
+    schema_version: str = "acceptance.check.v1"
+
+    @model_validator(mode="after")
+    def validate_acceptance_check(self) -> "AcceptanceCheckRecord":
+        if not self.check_id.strip():
+            raise ValueError("check_id must not be empty")
+        if not self.description.strip():
+            raise ValueError("description must not be empty")
+        if self.total < 0:
+            raise ValueError("total must be non-negative")
+        if self.failed < 0:
+            raise ValueError("failed must be non-negative")
+        if self.failed > self.total:
+            raise ValueError("failed must not exceed total")
+        if self.status == "passed" and self.failed:
+            raise ValueError("passed checks cannot have failures")
+        if self.status == "failed" and not self.failed:
+            raise ValueError("failed checks require at least one failure")
+        return self
+
+
 class GoldEvaluationRecord(StrictModel):
     evaluation_id: str
     gold_path: str

@@ -15,6 +15,7 @@ from evidence_pipeline.schemas.jobs import JobRecord
 from evidence_pipeline.schemas.pdf import PDFBlockRecord
 from evidence_pipeline.schemas.review import ReviewDecisionRecord, ReviewQueueRecord
 from evidence_pipeline.schemas.reports import (
+    AcceptanceCheckRecord,
     ClaimDuplicateGroupRecord,
     ClaimRepairSuggestionRecord,
     GoldEvaluationRecord,
@@ -104,11 +105,15 @@ SCHEMA_REGISTRY = {
     "pii_redaction": PIIRedactionRecord,
     "pii-redaction": PIIRedactionRecord,
     "pii_redactions": PIIRedactionRecord,
+    "acceptance_check": AcceptanceCheckRecord,
+    "acceptance-check": AcceptanceCheckRecord,
+    "acceptance.check": AcceptanceCheckRecord,
     "error": ErrorRecord,
     "errors": ErrorRecord,
 }
 
 __all__ = [
+    "AcceptanceCheckRecord",
     "ChunkRecord",
     "ChatMessageRecord",
     "AudioUtteranceRecord",

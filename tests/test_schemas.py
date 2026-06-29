@@ -4,6 +4,7 @@ from pydantic import ValidationError
 from evidence_pipeline.schemas import SCHEMA_REGISTRY
 from evidence_pipeline.schemas.evidence import EvidenceRecord
 from evidence_pipeline.schemas.reports import (
+    AcceptanceCheckRecord,
     ClaimDuplicateGroupRecord,
     ClaimRepairSuggestionRecord,
     GoldEvaluationRecord,
@@ -86,6 +87,28 @@ def test_review_queue_record_requires_valid_state_and_claim_id():
             claim_id="claim_3",
             validation_status="quarantined",
             review_state="unreviewed",
+        )
+
+
+def test_acceptance_check_record_requires_consistent_counts():
+    record = AcceptanceCheckRecord(
+        check_id="accepted_text_claims_exact_evidence",
+        description="Accepted text-like claims have exact evidence substring validation.",
+        status="passed",
+        total=3,
+        failed=0,
+    )
+
+    assert record.schema_version == "acceptance.check.v1"
+    assert SCHEMA_REGISTRY["acceptance_check"] is AcceptanceCheckRecord
+
+    with pytest.raises(ValidationError):
+        AcceptanceCheckRecord(
+            check_id="accepted_text_claims_exact_evidence",
+            description="Accepted text-like claims have exact evidence substring validation.",
+            status="passed",
+            total=3,
+            failed=1,
         )
 
 
