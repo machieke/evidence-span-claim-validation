@@ -80,7 +80,7 @@ def test_core_stage_commands_write_idempotent_job_records(tmp_path: Path):
         assert all(job["config_hash"].startswith("cfg_") for job in jobs)
         assert [job["model_id"] for job in jobs] == [
             "rules.v1",
-            "deterministic.v6",
+            "deterministic.v7",
             "normalizer.v1",
         ]
         assert all(job["model_hash"].startswith("model_") for job in jobs)

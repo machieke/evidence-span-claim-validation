@@ -59,10 +59,34 @@ NUMBER_WORDS = {
 }
 
 _NUMBER_WORD_PATTERN = "|".join(sorted(NUMBER_WORDS))
+_UNIT_PATTERN = (
+    r"masts?|engines?|meters?|metres?|feet|foot|ft|inches|inch|in|"
+    r"cm|mm|km|miles?|mi|kg|g|lbs?|pounds?|oz|tons?|"
+    r"hours?|hrs?|minutes?|mins?|seconds?|secs?|days?|weeks?|months?|years?|"
+    r"liters?|litres?|gallons?|percent|%"
+)
+_NUMERIC_VALUE_PATTERN = r"(?:\d+(?:\.\d+)?|" + _NUMBER_WORD_PATTERN + r")"
 _NUMBER_DATE_RE = re.compile(
-    r"\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{2,4}|"
+    r"\b(?:"
+    r"\d{4}-\d{2}-\d{2}|"
+    r"\d{1,2}/\d{1,2}/\d{2,4}|"
+    r"\d{1,2}:\d{2}(?:\s?[ap]m)?|"
     r"yesterday|today|tomorrow|last week|next week|"
-    r"\d+(?:\.\d+)?%?|" + _NUMBER_WORD_PATTERN + r")\b",
+    r"(?:"
+    + _NUMERIC_VALUE_PATTERN
+    + r")\s*(?:-|to)\s*(?:"
+    + _NUMERIC_VALUE_PATTERN
+    + r")(?:\s+"
+    + _UNIT_PATTERN
+    + r")?|"
+    r"(?:"
+    + _NUMERIC_VALUE_PATTERN
+    + r")\s+"
+    + _UNIT_PATTERN
+    + r"|"
+    r"\d+(?:\.\d+)?%?|"
+    + _NUMBER_WORD_PATTERN
+    + r")\b",
     re.IGNORECASE,
 )
 _ENTITY_RE = re.compile(r"\b[A-Z][A-Za-z0-9_-]*(?:\s+[A-Z][A-Za-z0-9_-]*)*\b")
