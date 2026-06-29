@@ -1831,11 +1831,28 @@ def review_claim_command(
     reviewer_id: str = typer.Option("human_reviewer", "--reviewer-id", help="Reviewer identifier."),
     reason_code: Optional[List[str]] = typer.Option(None, "--reason-code", help="Reason code. Repeatable."),
     notes: Optional[str] = typer.Option(None, "--notes", help="Optional reviewer notes."),
+    corrected_claim: Optional[str] = typer.Option(None, "--corrected-claim", help="Optional corrected claim text."),
+    normalized_claim_json: Optional[str] = typer.Option(
+        None,
+        "--normalized-claim-json",
+        help="Optional corrected normalized claim JSON object.",
+    ),
     config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
 ) -> None:
     """Record a human review decision for a claim."""
     config = load_config(config_path)
     _init_paths(config)
+    review_metadata = {}
+    if corrected_claim is not None:
+        review_metadata["corrected_source_faithful_claim"] = corrected_claim
+    if normalized_claim_json is not None:
+        try:
+            normalized_claim = json.loads(normalized_claim_json)
+        except json.JSONDecodeError as exc:
+            raise typer.BadParameter(f"normalized claim JSON must be valid JSON: {exc.msg}")
+        if not isinstance(normalized_claim, dict):
+            raise typer.BadParameter("normalized claim JSON must be a JSON object")
+        review_metadata["corrected_normalized_claim"] = normalized_claim
     try:
         result = record_claim_review(
             config,
@@ -1844,6 +1861,7 @@ def review_claim_command(
             reviewer_id=reviewer_id,
             reason_codes=reason_code,
             notes=notes,
+            metadata=review_metadata or None,
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc))

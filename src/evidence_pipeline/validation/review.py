@@ -276,6 +276,7 @@ def _review_controls(item: dict) -> str:
     )
     reason_codes = item.get("reason_codes") or []
     reason_code = reason_codes[0] if reason_codes else ""
+    normalized_edit = _normalized_claim_edit_json(item)
     options = "".join(
         f'<option value="{decision}"{" selected" if decision == selected_decision else ""}>{decision}</option>'
         for decision in decisions
@@ -289,6 +290,18 @@ def _review_controls(item: dict) -> str:
                 f'value="{html.escape(_format_cell(reason_code))}">'
             ),
             '<textarea name="notes" aria-label="Reviewer notes" rows="2"></textarea>',
+            (
+                '<textarea name="corrected_source_faithful_claim" '
+                'aria-label="Corrected claim" rows="2">'
+                f'{html.escape(_format_cell(item.get("source_faithful_claim")))}'
+                "</textarea>"
+            ),
+            (
+                '<textarea name="normalized_claim_json" '
+                'aria-label="Normalized claim JSON" rows="3">'
+                f"{html.escape(normalized_edit)}"
+                "</textarea>"
+            ),
             '<div class="action-buttons">',
             '<button type="button" data-decision="accept">Accept</button>',
             '<button type="button" data-decision="reject">Reject</button>',
@@ -297,6 +310,19 @@ def _review_controls(item: dict) -> str:
             "</form>",
         ]
     )
+
+
+def _normalized_claim_edit_json(item: dict) -> str:
+    normalized_claims = item.get("normalized_claims") or []
+    if not normalized_claims:
+        return ""
+    first = normalized_claims[0]
+    if not isinstance(first, dict):
+        return ""
+    normalized_claim = first.get("normalized_claim")
+    if not isinstance(normalized_claim, dict):
+        return ""
+    return json.dumps(normalized_claim, indent=2, sort_keys=True, ensure_ascii=False)
 
 
 def _review_command_block(item: dict) -> str:
@@ -579,6 +605,7 @@ def _review_id(
     decision: str,
     reason_codes: List[str],
     notes: Optional[str],
+    metadata: Optional[Dict[str, Any]],
 ) -> str:
     return stable_id(
         "review",
@@ -588,6 +615,7 @@ def _review_id(
             "decision": decision,
             "reason_codes": reason_codes,
             "notes": notes or "",
+            "metadata": metadata or {},
         },
     )
 
@@ -672,6 +700,7 @@ def _append_review_audit(
     decision: str,
     reason_codes: List[str],
     status: str,
+    metadata: Optional[Dict[str, Any]] = None,
     skip_reason: Optional[str] = None,
 ) -> None:
     created_at = utc_now()
@@ -680,6 +709,8 @@ def _append_review_audit(
         "reason_codes": reason_codes,
         "review_id": review_id,
     }
+    if metadata:
+        details["review_metadata"] = metadata
     if skip_reason:
         details["skip_reason"] = skip_reason
     append_jsonl(
@@ -714,6 +745,7 @@ def record_claim_review(
     reviewer_id: str,
     reason_codes: Optional[List[str]] = None,
     notes: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
 ) -> ClaimReviewResult:
     normalized_decision = _normalize_decision(decision)
     normalized_reason_codes = sorted(set(reason_codes or []))
@@ -722,7 +754,19 @@ def record_claim_review(
         raise ValueError(f"claim_id not found: {claim_id}")
 
     paths = config.jsonl_paths()
-    review_id = _review_id(claim_id, reviewer_id, normalized_decision, normalized_reason_codes, notes)
+    review_metadata = {
+        "claim_type": claim.get("claim_type"),
+        "source_modality": claim.get("source_modality"),
+        **(metadata or {}),
+    }
+    review_id = _review_id(
+        claim_id,
+        reviewer_id,
+        normalized_decision,
+        normalized_reason_codes,
+        notes,
+        review_metadata,
+    )
     if review_id in existing_values(paths["review_decisions"], "review_id"):
         _append_review_audit(
             config,
@@ -732,6 +776,7 @@ def record_claim_review(
             normalized_decision,
             normalized_reason_codes,
             status="skipped",
+            metadata=review_metadata,
             skip_reason="duplicate_review",
         )
         return ClaimReviewResult(review_id=review_id, created=False)
@@ -747,7 +792,7 @@ def record_claim_review(
             decision=normalized_decision,
             reason_codes=normalized_reason_codes,
             notes=notes,
-            metadata={"claim_type": claim.get("claim_type"), "source_modality": claim.get("source_modality")},
+            metadata=review_metadata,
         ),
     )
     _append_review_audit(
@@ -758,5 +803,6 @@ def record_claim_review(
         normalized_decision,
         normalized_reason_codes,
         status="created",
+        metadata=review_metadata,
     )
     return ClaimReviewResult(review_id=review_id, created=True)

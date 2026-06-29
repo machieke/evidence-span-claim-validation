@@ -46,6 +46,12 @@ def test_review_claim_records_idempotent_decision_and_trace(tmp_path: Path):
         append_jsonl(Path("data/jsonl/evidence.jsonl"), evidence)
         append_jsonl(Path("data/jsonl/claims.raw.jsonl"), claim)
 
+        edit_args = [
+            "--corrected-claim",
+            "Reviewer corrected region region_1 to gray.",
+            "--normalized-claim-json",
+            '{"object":"gray","predicate":"classified_as","subject":"region_1"}',
+        ]
         first = runner.invoke(
             app,
             [
@@ -57,6 +63,7 @@ def test_review_claim_records_idempotent_decision_and_trace(tmp_path: Path):
                 "reviewer_1",
                 "--reason-code",
                 "human_confirmed_label",
+                *edit_args,
             ],
         )
         second = runner.invoke(
@@ -70,6 +77,7 @@ def test_review_claim_records_idempotent_decision_and_trace(tmp_path: Path):
                 "reviewer_1",
                 "--reason-code",
                 "human_confirmed_label",
+                *edit_args,
             ],
         )
         assert first.exit_code == 0, first.stdout
@@ -82,6 +90,15 @@ def test_review_claim_records_idempotent_decision_and_trace(tmp_path: Path):
         assert reviews[0]["claim_id"] == "claim_img_label_1"
         assert reviews[0]["decision"] == "accept"
         assert reviews[0]["reason_codes"] == ["human_confirmed_label"]
+        assert (
+            reviews[0]["metadata"]["corrected_source_faithful_claim"]
+            == "Reviewer corrected region region_1 to gray."
+        )
+        assert reviews[0]["metadata"]["corrected_normalized_claim"] == {
+            "object": "gray",
+            "predicate": "classified_as",
+            "subject": "region_1",
+        }
 
         audit_events = [payload for _, payload in read_jsonl(Path("data/jsonl/audit_events.jsonl"))]
         assert len(audit_events) == 2
@@ -89,12 +106,20 @@ def test_review_claim_records_idempotent_decision_and_trace(tmp_path: Path):
         assert all(event["action"] == "review_claim" for event in audit_events)
         assert all(event["actor_id"] == "reviewer_1" for event in audit_events)
         assert all(event["claim_id"] == "claim_img_label_1" for event in audit_events)
+        assert (
+            audit_events[0]["details"]["review_metadata"]["corrected_normalized_claim"]["object"]
+            == "gray"
+        )
         assert audit_events[1]["details"]["skip_reason"] == "duplicate_review"
 
         trace = runner.invoke(app, ["trace-claim", "claim_img_label_1"])
         assert trace.exit_code == 0, trace.stdout
         trace_payload = json.loads(trace.stdout)
         assert trace_payload["review_decisions"][0]["review_id"] == reviews[0]["review_id"]
+        assert (
+            trace_payload["review_decisions"][0]["metadata"]["corrected_source_faithful_claim"]
+            == "Reviewer corrected region region_1 to gray."
+        )
         assert [event["status"] for event in trace_payload["audit_events"]] == ["created", "skipped"]
 
         html_trace = runner.invoke(app, ["trace-claim", "claim_img_label_1", "--format", "html"])
@@ -119,6 +144,20 @@ def test_review_claim_records_idempotent_decision_and_trace(tmp_path: Path):
         invalid = runner.invoke(app, ["review-claim", "claim_img_label_1", "--decision", "maybe"])
         assert invalid.exit_code != 0
         assert "review decision must be one of" in invalid.stdout
+
+        invalid_edit = runner.invoke(
+            app,
+            [
+                "review-claim",
+                "claim_img_label_1",
+                "--decision",
+                "accept",
+                "--normalized-claim-json",
+                "[]",
+            ],
+        )
+        assert invalid_edit.exit_code != 0
+        assert "normalized claim JSON must be a JSON object" in invalid_edit.stdout
 
         invalid_trace = runner.invoke(app, ["trace-claim", "claim_img_label_1", "--format", "xml"])
         assert invalid_trace.exit_code != 0
@@ -365,6 +404,8 @@ def test_review_queue_exports_unreviewed_quarantined_claims(tmp_path: Path):
         assert '<select name="decision"' in html_text
         assert '<input name="reason_code"' in html_text
         assert '<textarea name="notes"' in html_text
+        assert '<textarea name="corrected_source_faithful_claim"' in html_text
+        assert '<textarea name="normalized_claim_json"' in html_text
         assert 'data-decision="accept"' in html_text
         assert 'data-decision="reject"' in html_text
         assert 'data-decision="needs_review"' in html_text
