@@ -58,6 +58,7 @@ def _accepted_keys(config: PipelineConfig) -> Set[GoldKey]:
         _key(payload)
         for _, payload in read_jsonl(config.jsonl_paths()["claims_validated"])
         if payload.get("support_status") == "accepted_extracted"
+        and payload.get("evidence_text")
     }
 
 

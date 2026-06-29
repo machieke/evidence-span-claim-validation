@@ -643,12 +643,17 @@ def seed_demo_artifacts_command(
         stage="seed_demo_artifacts",
         input_record_ids=["demo:multimodal_acceptance_v1"],
         model_id=DEMO_SEED_VERSION,
-        metrics={"records_created": result.created, "records_skipped": result.skipped},
-        metadata={"artifact_counts": result.artifact_counts},
+        metrics={
+            "records_created": result.created,
+            "records_skipped": result.skipped,
+            "gold_claims": result.gold_claims,
+        },
+        metadata={"artifact_counts": result.artifact_counts, "gold_path": str(result.gold_path)},
     )
     typer.echo(
         f"records_created={result.created} records_skipped={result.skipped} "
-        f"artifacts={len(result.artifact_counts)}"
+        f"artifacts={len(result.artifact_counts)} gold={result.gold_path} "
+        f"gold_claims={result.gold_claims}"
     )
 
 

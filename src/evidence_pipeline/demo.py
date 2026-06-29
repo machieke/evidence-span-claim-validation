@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from evidence_pipeline.config import PipelineConfig
-from evidence_pipeline.jsonl import append_jsonl, existing_values
+from evidence_pipeline.jsonl import append_jsonl, ensure_parent, existing_values, read_jsonl
 from evidence_pipeline.schemas.audio import AudioUtteranceRecord
 from evidence_pipeline.schemas.chat import ChatMessageRecord
 from evidence_pipeline.schemas.chunks import ChunkRecord
@@ -25,6 +26,8 @@ class DemoSeedResult:
     created: int
     skipped: int
     artifact_counts: Dict[str, int]
+    gold_path: Path
+    gold_claims: int
 
 
 def _append_unique(
@@ -565,4 +568,64 @@ def seed_demo_artifacts(config: PipelineConfig) -> DemoSeedResult:
             created += made
             skipped += skipped_record
 
-    return DemoSeedResult(created=created, skipped=skipped, artifact_counts=artifact_counts)
+    gold_result = write_demo_gold_file(config)
+    return DemoSeedResult(
+        created=created,
+        skipped=skipped,
+        artifact_counts=artifact_counts,
+        gold_path=gold_result.gold_path,
+        gold_claims=gold_result.gold_claims,
+    )
+
+
+@dataclass
+class DemoGoldResult:
+    gold_path: Path
+    gold_claims: int
+
+
+def _gold_claim_from_payload(payload: dict, expected_status: str) -> Optional[dict]:
+    evidence_id = payload.get("evidence_id")
+    evidence_text = payload.get("evidence_text")
+    if not evidence_id or not evidence_text:
+        return None
+    claim = {
+        "evidence_id": evidence_id,
+        "evidence_text": evidence_text,
+        "expected_status": expected_status,
+    }
+    claim_id = payload.get("claim_id")
+    if claim_id:
+        claim["claim_id"] = claim_id
+    return claim
+
+
+def write_demo_gold_file(config: PipelineConfig, output_path: Optional[Path] = None) -> DemoGoldResult:
+    if output_path is None:
+        output_path = config.paths.reports_dir / "demo_gold.json"
+    claims: List[dict] = []
+    paths = config.jsonl_paths()
+    for _, payload in read_jsonl(paths["claims_validated"]):
+        claim_id = str(payload.get("claim_id") or "")
+        if not claim_id.startswith("claim_demo_"):
+            continue
+        claim = _gold_claim_from_payload(payload, "accepted")
+        if claim is not None:
+            claims.append(claim)
+    for _, payload in read_jsonl(paths["quarantine"]):
+        claim_id = str(payload.get("claim_id") or "")
+        if not claim_id.startswith("claim_demo_"):
+            continue
+        claim_payload = payload.get("payload") or {}
+        if not isinstance(claim_payload, dict):
+            continue
+        claim = _gold_claim_from_payload(claim_payload, "quarantined")
+        if claim is not None:
+            claims.append(claim)
+
+    ensure_parent(output_path)
+    output_path.write_text(
+        json.dumps({"claims": claims}, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    return DemoGoldResult(gold_path=output_path, gold_claims=len(claims))

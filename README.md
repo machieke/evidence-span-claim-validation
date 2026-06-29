@@ -22,6 +22,7 @@ Demo acceptance dataset:
 
 ```bash
 PYTHONPATH=src python3 -m evidence_pipeline seed-demo-artifacts
+PYTHONPATH=src python3 -m evidence_pipeline eval-gold data/reports/demo_gold.json
 PYTHONPATH=src python3 -m evidence_pipeline finalize-run
 PYTHONPATH=src python3 -m evidence_pipeline validate-artifacts --include-reports
 ```
