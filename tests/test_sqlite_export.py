@@ -5,7 +5,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from evidence_pipeline.cli import app
-from evidence_pipeline.jsonl import append_jsonl
+from evidence_pipeline.jsonl import append_jsonl, read_jsonl
 from evidence_pipeline.schemas.claims import RawClaimRecord
 from evidence_pipeline.schemas.evidence import EvidenceRecord
 
@@ -119,6 +119,10 @@ def test_export_sqlite_writes_artifact_tables_and_counts(tmp_path: Path):
                 "SELECT record_count FROM artifact_counts WHERE artifact_name = ?",
                 ("review_queue",),
             ).fetchone()[0]
+            jobs_artifact_count = connection.execute(
+                "SELECT record_count FROM artifact_counts WHERE artifact_name = ?",
+                ("jobs",),
+            ).fetchone()[0]
             payload_json = connection.execute(
                 "SELECT payload_json FROM claims_raw WHERE record_key = ?",
                 ("claim_1",),
@@ -141,14 +145,19 @@ def test_export_sqlite_writes_artifact_tables_and_counts(tmp_path: Path):
         assert graph_count == 1
         assert routing_count == 1
         assert review_queue_count == 1
-        assert jobs_count == 0
+        assert jobs_count == 1
         assert review_count == 0
         assert audit_count == 0
         assert artifact_count == 1
         assert graph_artifact_count == 1
         assert routing_artifact_count == 1
         assert review_queue_artifact_count == 1
+        assert jobs_artifact_count == 1
         assert json.loads(payload_json)["claim_id"] == "claim_1"
         assert json.loads(graph_payload_json)["edge_id"] == "edge_1"
         assert json.loads(routing_payload_json)["routing_id"] == "route_1"
         assert json.loads(review_queue_payload_json)["review_queue_id"] == "reviewq_1"
+        jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
+        assert len(jobs) == 1
+        assert jobs[0]["stage"] == "export_sqlite"
+        assert jobs[0]["model_id"] == "sqlite.export.v1"

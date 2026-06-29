@@ -106,6 +106,7 @@ def test_finalize_run_writes_acceptance_outputs_idempotently(tmp_path: Path):
         jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
         assert [job["stage"] for job in jobs].count("export_graph") == 1
         assert [job["stage"] for job in jobs].count("acceptance_check") == 1
+        assert [job["stage"] for job in jobs].count("export_sqlite") == 1
 
         artifact_check = runner.invoke(app, ["validate-artifacts", "--include-reports"])
         assert artifact_check.exit_code == 0, artifact_check.stdout

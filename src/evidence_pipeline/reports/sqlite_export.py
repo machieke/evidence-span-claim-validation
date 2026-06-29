@@ -9,6 +9,8 @@ from typing import Dict, Iterable, Optional, Tuple
 from evidence_pipeline.config import PipelineConfig
 from evidence_pipeline.jsonl import ensure_parent, read_jsonl
 
+SQLITE_EXPORT_VERSION = "sqlite.export.v1"
+
 ARTIFACT_KEY_FIELDS = {
     "sources": "source_id",
     "chat_messages": "message_id",

@@ -48,7 +48,7 @@ from evidence_pipeline.reports.lineage import (
     write_claim_trace,
     write_claim_trace_html,
 )
-from evidence_pipeline.reports.sqlite_export import export_sqlite
+from evidence_pipeline.reports.sqlite_export import SQLITE_EXPORT_VERSION, export_sqlite
 from evidence_pipeline.schemas import SCHEMA_REGISTRY, EvidenceRecord, SourceModality, SourceRecord
 from evidence_pipeline.spans.image_region_clusterer import (
     COLOR_CLUSTERING_METHOD,
@@ -650,6 +650,20 @@ def _record_gold_eval_job(config: PipelineConfig, gold_file: Path, result) -> No
             "metrics_path": str(result.metrics_path),
             "output_path": str(result.output_path),
         },
+    )
+
+
+def _record_sqlite_export_job(config: PipelineConfig, result) -> None:
+    record_job_result(
+        config,
+        stage="export_sqlite",
+        input_record_ids=["artifacts:jsonl", "reports:jsonl"],
+        model_id=SQLITE_EXPORT_VERSION,
+        metrics={
+            "tables": len(result.table_counts),
+            "records": sum(result.table_counts.values()),
+        },
+        metadata={"output_path": str(result.output_path), "table_counts": result.table_counts},
     )
 
 
@@ -1843,6 +1857,7 @@ def export_sqlite_command(
     config = load_config(config_path)
     _init_paths(config)
     result = export_sqlite(config, output_path=output)
+    _record_sqlite_export_job(config, result)
     typer.echo(
         f"{result.output_path} tables={len(result.table_counts)} "
         f"records={sum(result.table_counts.values())}"
@@ -1904,6 +1919,7 @@ def finalize_run_command(
             f"artifact_failures={artifact_validation_result.failures}"
         )
     if sqlite_result is not None:
+        _record_sqlite_export_job(config, sqlite_result)
         message = (
             f"{message} sqlite={sqlite_result.output_path} "
             f"sqlite_tables={len(sqlite_result.table_counts)} "
