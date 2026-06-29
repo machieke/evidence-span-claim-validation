@@ -107,6 +107,63 @@ def test_validate_claims_writes_accepted_validation_and_quarantine(tmp_path: Pat
         assert artifact_check.exit_code == 0, artifact_check.stdout
 
 
+def test_validate_claims_quarantines_missing_chat_provenance(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        init = runner.invoke(app, ["init"])
+        assert init.exit_code == 0
+
+        append_jsonl(
+            Path("data/jsonl/evidence.jsonl"),
+            EvidenceRecord(
+                evidence_id="ev_msg_1",
+                source_id="src_chat_1",
+                source_modality="chat",
+                evidence_type="message_span",
+                text="Hope had three masts.",
+                provenance={},
+            ),
+        )
+        append_jsonl(
+            Path("data/jsonl/claims.raw.jsonl"),
+            RawClaimRecord(
+                claim_id="claim_missing_chat_provenance",
+                source_id="src_chat_1",
+                source_modality="chat",
+                evidence_id="ev_msg_1",
+                source_faithful_claim="The speaker asserted that Hope had three masts.",
+                subject="Hope",
+                predicate="had",
+                object="three masts",
+                modality="asserted",
+                evidence_text="Hope had three masts.",
+                attribution={"type": "speaker", "agent": "user_b"},
+                truth_status="speaker_asserted_unverified",
+                confidence=0.82,
+            ),
+        )
+
+        result = runner.invoke(app, ["validate-claims"])
+
+        assert result.exit_code == 0, result.stdout
+        assert "claims_accepted=0" in result.stdout
+        assert "claims_quarantined=1" in result.stdout
+
+        validations = [payload for _, payload in read_jsonl(Path("data/jsonl/validations.jsonl"))]
+        assert validations[0]["errors"] == [
+            "missing_conversation_provenance",
+            "missing_message_provenance",
+            "missing_sender_provenance",
+        ]
+        assert validations[0]["validator_version"] == "deterministic.v3"
+
+        quarantined = [payload for _, payload in read_jsonl(Path("data/jsonl/quarantine.jsonl"))]
+        assert quarantined[0]["reason_codes"] == [
+            "missing_conversation_provenance",
+            "missing_message_provenance",
+            "missing_sender_provenance",
+        ]
+
+
 def test_validate_claims_quarantines_unsupported_named_entities(tmp_path: Path):
     with runner.isolated_filesystem(temp_dir=tmp_path):
         init = runner.invoke(app, ["init"])
@@ -336,7 +393,7 @@ def test_validate_claims_enforces_pdf_provenance_requirements(tmp_path: Path):
             "missing_block_provenance",
             "missing_bbox_provenance",
         ]
-        assert validations["claim_pdf_bad"]["validator_version"] == "deterministic.v2"
+        assert validations["claim_pdf_bad"]["validator_version"] == "deterministic.v3"
         assert validations["claim_pdf_good"]["status"] == "accepted_extracted"
 
         quarantined = [payload for _, payload in read_jsonl(Path("data/jsonl/quarantine.jsonl"))]

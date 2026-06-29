@@ -21,7 +21,7 @@ from evidence_pipeline.validation.text_support import (
     unsupported_entities,
 )
 
-VALIDATOR_VERSION = "deterministic.v2"
+VALIDATOR_VERSION = "deterministic.v3"
 IMAGE_CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.85
 IMAGE_CLUSTER_MIN_COHESION = 0.75
 IMAGE_CLUSTER_MIN_SIZE = 5
@@ -117,6 +117,25 @@ def _pdf_provenance_errors(claim: RawClaimRecord, evidence: Optional[EvidenceRec
     return errors
 
 
+def _has_text_provenance(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _chat_provenance_errors(claim: RawClaimRecord, evidence: Optional[EvidenceRecord]) -> List[str]:
+    if claim.source_modality != "chat" or evidence is None:
+        return []
+
+    provenance = evidence.provenance
+    errors: List[str] = []
+    if not _has_text_provenance(provenance.get("conversation_id")):
+        errors.append("missing_conversation_provenance")
+    if not _has_text_provenance(provenance.get("message_id")):
+        errors.append("missing_message_provenance")
+    if not _has_text_provenance(provenance.get("sender_id")):
+        errors.append("missing_sender_provenance")
+    return errors
+
+
 def _quantities_preserved(claim: RawClaimRecord, support_text: str) -> bool:
     evidence_quantities = extract_quantities(claim.evidence_text or support_text)
     claim_quantities = extract_quantities(_claim_text_for_checks(claim))
@@ -166,6 +185,7 @@ def validate_claim_deterministically(
     errors.extend(attribution_errors)
     attribution_preserved = not attribution_errors
     errors.extend(_pdf_provenance_errors(claim, evidence))
+    errors.extend(_chat_provenance_errors(claim, evidence))
     errors.extend(_audio_risk_errors(claim, evidence, span))
     errors.extend(_image_risk_errors(claim, evidence, review_decisions or []))
     errors.extend(_ocr_risk_errors(claim, evidence, span))

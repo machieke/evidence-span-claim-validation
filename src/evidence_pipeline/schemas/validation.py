@@ -28,7 +28,7 @@ class ValidationRecord(StrictModel):
     status: ValidationStatus
     errors: List[str] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
-    validator_version: str = "deterministic.v2"
+    validator_version: str = "deterministic.v3"
     created_at: datetime = Field(default_factory=utc_now)
     metadata: Dict[str, Any] = Field(default_factory=dict)
     schema_version: str = "validation.v1"
