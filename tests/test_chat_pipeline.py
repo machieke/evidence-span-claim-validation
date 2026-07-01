@@ -173,6 +173,7 @@ def test_chat_pipeline_is_idempotent(tmp_path: Path):
         assert "| claim_graph | 3 |" in report_text
         assert "| claims_validated | 3 |" in report_text
         assert "| claims_normalized | 3 |" in report_text
+        assert "| Normalized confidence propagation rate | 100.0% |" in report_text
         assert "## Normalized Claims By Predicate" in report_text
         assert "| asks_whether | 1 |" in report_text
         assert "## Entity Resolution Bases" in report_text

@@ -238,6 +238,37 @@ def _duplicate_claim_rate(claims_normalized: Iterable[dict], claim_duplicates: I
     return _rate(len(duplicated_claim_ids), len(normalized_claims))
 
 
+def _normalized_confidence_rate(claims_validated: Iterable[dict], claims_normalized: Iterable[dict]) -> str:
+    accepted_confidence = {
+        str(claim.get("claim_id")): claim.get("confidence")
+        for claim in claims_validated
+        if claim.get("support_status") == "accepted_extracted" and claim.get("confidence") is not None
+    }
+    if not accepted_confidence:
+        return _rate(0, 0)
+
+    normalized_by_claim_id: Dict[str, List[dict]] = {}
+    for normalized in claims_normalized:
+        claim_id = normalized.get("claim_id")
+        if claim_id is None:
+            continue
+        normalized_by_claim_id.setdefault(str(claim_id), []).append(normalized)
+
+    preserved = 0
+    for claim_id, confidence in accepted_confidence.items():
+        for normalized in normalized_by_claim_id.get(claim_id, []):
+            normalized_claim = normalized.get("normalized_claim") or {}
+            qualifiers = (
+                normalized_claim.get("qualifiers")
+                if isinstance(normalized_claim, dict)
+                else None
+            )
+            if isinstance(qualifiers, dict) and qualifiers.get("confidence") == confidence:
+                preserved += 1
+                break
+    return _rate(preserved, len(accepted_confidence))
+
+
 def _numeric_value(value: object) -> Optional[float]:
     if isinstance(value, bool):
         return None
@@ -371,6 +402,7 @@ def _quality_rows(
         ("Uncertainty preservation rate", _validation_flag_rate(validations, "uncertainty_preserved")),
         ("Attribution preservation rate", _validation_flag_rate(validations, "attribution_preserved")),
         ("Quantity preservation rate", _validation_flag_rate(validations, "quantities_preserved")),
+        ("Normalized confidence propagation rate", _normalized_confidence_rate(claims_validated, claims_normalized)),
         ("Duplicate normalized claim rate", _duplicate_claim_rate(claims_normalized, claim_duplicates)),
         ("Review disagreement rate", _review_disagreement_rate(review_decisions)),
         ("Evidence repair suggestion rate", _rate(len(repair_suggestions), len(claims_raw))),

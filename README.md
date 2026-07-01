@@ -1,14 +1,19 @@
 # Evidence Span Claim Validation
 
-This repository implements the foundation for an evidence-span to claim to validation pipeline.
+This repository implements an evidence-span -> claim -> validation -> normalization pipeline for auditable multimodal knowledge extraction.
 
-The initial slice covers Milestone 0 from the implementation plan:
+The current branch covers the full deterministic scaffold:
 
-- Pydantic schemas for sources, evidence, chunks, spans, claims, and validations.
-- Stable ID helpers.
-- JSONL read, append, and validation utilities.
-- Basic configuration loading.
-- A Typer CLI for initializing artifacts, registering sources, and validating JSONL files.
+- Multimodal ingestion for chat, PDFs, audio transcripts/media registration, images, and image OCR.
+- Durable evidence records with provenance for messages, PDF blocks, utterances, visual regions, visual clusters, and OCR spans.
+- Context chunking and rule-based claim-bearing span detection.
+- Source-faithful claim extraction through a provider-neutral JSON extraction adapter.
+- Deterministic validation for exact evidence support, provenance, attribution, negation, uncertainty, quantities, timestamps, image labels, and review outcomes.
+- Repair suggestions and audited repair application for evidence text mismatches.
+- Human review decisions and review queue exports, including HTML previews for PDF pages, audio clips, image crops, and cluster representatives.
+- Normalized claims, duplicate groups, JSON graph export, SQLite export, and MeTTa export.
+- Confidence propagation from raw claims through validation, normalization, graph edges, duplicate groups, and MeTTa confidence atoms.
+- Acceptance checks, gold evaluation, trace reports, PII/privacy/retention helpers, and run/finalize commands.
 
 ## Quick Start
 
@@ -78,6 +83,8 @@ PYTHONPATH=src python3 -m evidence_pipeline validate-artifacts
 Audio transcript pipeline:
 
 ```bash
+PYTHONPATH=src python3 -m evidence_pipeline normalize-audio data/raw/audio/meeting.mp3
+PYTHONPATH=src python3 -m evidence_pipeline normalize-audio data/raw/audio/meeting.mp3 --execute
 PYTHONPATH=src python3 -m evidence_pipeline ingest-audio-transcript data/raw/audio/transcript.json
 PYTHONPATH=src python3 -m evidence_pipeline build-audio-evidence
 PYTHONPATH=src python3 -m evidence_pipeline chunk-audio
@@ -134,3 +141,33 @@ PYTHONPATH=src python3 -m evidence_pipeline build-evidence --modality all
 PYTHONPATH=src python3 -m evidence_pipeline chunk --modality chat
 PYTHONPATH=src python3 -m evidence_pipeline detect-spans --modality chat
 ```
+
+## Operator Workflow
+
+Use the pipeline as an auditable promotion path:
+
+1. Ingest or register sources.
+2. Build evidence records with source-specific provenance.
+3. Build chunks and detect claim-bearing spans.
+4. Extract raw source-faithful claims.
+5. Validate claims before normalization or export.
+6. Repair evidence text issues only through `repair-claims` and `apply-repairs`.
+7. Use `review-queue` and `review-claim` for quarantined or risky claims.
+8. Normalize only accepted claims.
+9. Export graph, SQLite, or MeTTa outputs.
+10. Run `acceptance-check`, `report`, `trace-claim`, and `validate-artifacts --include-reports`.
+
+The key invariant is that exported claims are not free-floating facts. They retain source IDs, evidence IDs, attribution, truth status, source-faithful text, confidence, and validation metadata.
+
+## Confidence And MeTTa
+
+Raw claim confidence is preserved into validated claims, normalized qualifiers, JSON graph edges, duplicate groups, and MeTTa export.
+
+MeTTa output includes first-class confidence expressions:
+
+```lisp
+(claim-confidence "nclaim_..." 0.82)
+(claim-confidence-basis "nclaim_..." "validated_claim_confidence")
+```
+
+Validation still acts as a gate: quarantined claims do not normalize or export. Accepted claims carry their confidence forward for downstream revision or reasoning.
