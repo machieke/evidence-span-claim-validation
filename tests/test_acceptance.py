@@ -76,6 +76,7 @@ def test_acceptance_check_passes_for_complete_chat_pipeline(tmp_path: Path):
         assert check_by_id["accepted_text_claims_exact_evidence"]["status"] == "passed"
         assert check_by_id["accepted_chat_audio_claims_attributed"]["status"] == "passed"
         assert check_by_id["normalized_claims_from_accepted_claims"]["status"] == "passed"
+        assert check_by_id["normalized_claims_preserve_confidence"]["status"] == "passed"
         assert check_by_id["summary_report_exists"]["status"] == "passed"
 
         jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
@@ -95,6 +96,50 @@ def test_acceptance_check_passes_for_complete_chat_pipeline(tmp_path: Path):
 
         artifact_check = runner.invoke(app, ["validate-artifacts", "--include-reports"])
         assert artifact_check.exit_code == 0, artifact_check.stdout
+
+
+def test_acceptance_check_fails_for_normalized_claim_missing_confidence(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        _write_chat_export(Path("chat.json"))
+        _run_chat_pipeline()
+        accepted = next(payload for _, payload in read_jsonl(Path("data/jsonl/claims.validated.jsonl")))
+        append_jsonl(
+            Path("data/jsonl/claims.normalized.jsonl"),
+            NormalizedClaimRecord(
+                normalized_claim_id="nclaim_missing_confidence",
+                claim_id=accepted["claim_id"],
+                source_id=accepted["source_id"],
+                evidence_id=accepted["evidence_id"],
+                normalized_claim={
+                    "subject": "speaker:user_b",
+                    "predicate": "asserts",
+                    "object": accepted["source_faithful_claim"],
+                    "qualifiers": {
+                        "modality": accepted["modality"],
+                        "truth_status": accepted["truth_status"],
+                    },
+                },
+            ),
+        )
+
+        report = runner.invoke(app, ["report"])
+        assert report.exit_code == 0, report.stdout
+
+        result = runner.invoke(app, ["acceptance-check"])
+
+        assert result.exit_code == 1, result.stdout
+        checks = [payload for _, payload in read_jsonl(Path("data/reports/acceptance_check.jsonl"))]
+        failed = {check["check_id"]: check for check in checks if check["status"] == "failed"}
+        assert set(failed) == {"normalized_claims_preserve_confidence"}
+        assert failed["normalized_claims_preserve_confidence"]["details"] == [
+            {
+                "accepted_confidence": accepted["confidence"],
+                "claim_id": accepted["claim_id"],
+                "normalized_claim_id": "nclaim_missing_confidence",
+                "normalized_confidence": None,
+                "reasons": ["missing_normalized_confidence", "missing_confidence_basis"],
+            }
+        ]
 
         export = runner.invoke(app, ["export-sqlite"])
         assert export.exit_code == 0, export.stdout

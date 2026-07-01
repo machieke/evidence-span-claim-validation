@@ -690,6 +690,99 @@ def test_validate_claims_quarantines_unit_mismatch(tmp_path: Path):
         assert quarantined[0]["reason_codes"] == ["quantity_mismatch"]
 
 
+def test_validate_claims_quarantines_negation_and_uncertainty_drops(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        init = runner.invoke(app, ["init"])
+        assert init.exit_code == 0
+
+        for evidence in [
+            EvidenceRecord(
+                evidence_id="ev_negation",
+                source_id="src_chat_1",
+                source_modality="chat",
+                evidence_type="message_span",
+                text="The pump did not start.",
+                provenance={
+                    "conversation_id": "conv_1",
+                    "message_id": "msg_1",
+                    "sender_id": "user_b",
+                },
+            ),
+            EvidenceRecord(
+                evidence_id="ev_uncertainty",
+                source_id="src_chat_1",
+                source_modality="chat",
+                evidence_type="message_span",
+                text="Hope may depart tomorrow.",
+                provenance={
+                    "conversation_id": "conv_1",
+                    "message_id": "msg_2",
+                    "sender_id": "user_b",
+                },
+            ),
+        ]:
+            append_jsonl(Path("data/jsonl/evidence.jsonl"), evidence)
+
+        for claim in [
+            RawClaimRecord(
+                claim_id="claim_negation_dropped",
+                source_id="src_chat_1",
+                source_modality="chat",
+                evidence_id="ev_negation",
+                source_faithful_claim="The speaker asserted that the pump started.",
+                subject="pump",
+                predicate="started",
+                object=None,
+                modality="asserted",
+                evidence_text="The pump did not start.",
+                attribution={"type": "speaker", "agent": "user_b"},
+                truth_status="speaker_asserted_unverified",
+                confidence=0.9,
+            ),
+            RawClaimRecord(
+                claim_id="claim_uncertainty_dropped",
+                source_id="src_chat_1",
+                source_modality="chat",
+                evidence_id="ev_uncertainty",
+                source_faithful_claim="The speaker asserted that Hope will depart tomorrow.",
+                subject="Hope",
+                predicate="will_depart",
+                object="tomorrow",
+                modality="asserted",
+                evidence_text="Hope may depart tomorrow.",
+                attribution={"type": "speaker", "agent": "user_b"},
+                truth_status="speaker_asserted_unverified",
+                confidence=0.9,
+            ),
+        ]:
+            append_jsonl(Path("data/jsonl/claims.raw.jsonl"), claim)
+
+        result = runner.invoke(app, ["validate-claims"])
+
+        assert result.exit_code == 0, result.stdout
+        assert "claims_accepted=0" in result.stdout
+        assert "claims_quarantined=2" in result.stdout
+
+        validations = {
+            payload["claim_id"]: payload
+            for _, payload in read_jsonl(Path("data/jsonl/validations.jsonl"))
+        }
+        assert validations["claim_negation_dropped"]["errors"] == ["negation_dropped"]
+        assert validations["claim_negation_dropped"]["metadata"]["validation"]["negation_preserved"] is False
+        assert validations["claim_uncertainty_dropped"]["errors"] == ["uncertainty_dropped"]
+        assert (
+            validations["claim_uncertainty_dropped"]["metadata"]["validation"]["uncertainty_preserved"]
+            is False
+        )
+
+        quarantined = {
+            payload["claim_id"]: payload
+            for _, payload in read_jsonl(Path("data/jsonl/quarantine.jsonl"))
+        }
+        assert quarantined["claim_negation_dropped"]["reason_codes"] == ["negation_dropped"]
+        assert quarantined["claim_uncertainty_dropped"]["reason_codes"] == ["uncertainty_dropped"]
+
+
 def test_validate_claims_enforces_pdf_provenance_requirements(tmp_path: Path):
     with runner.isolated_filesystem(temp_dir=tmp_path):
         init = runner.invoke(app, ["init"])

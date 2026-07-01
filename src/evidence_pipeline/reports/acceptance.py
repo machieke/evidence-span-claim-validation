@@ -529,6 +529,52 @@ def _normalized_claims_from_accepted_claims(artifacts: Dict[str, List[dict]]) ->
     )
 
 
+def _normalized_claims_preserve_confidence(artifacts: Dict[str, List[dict]]) -> AcceptanceCheckRecord:
+    accepted_by_claim_id = {
+        str(claim.get("claim_id")): claim
+        for claim in _accepted_claims(artifacts)
+        if claim.get("confidence") is not None
+    }
+    failures = []
+    total = 0
+    for normalized in artifacts["claims_normalized"]:
+        claim_id = str(normalized.get("claim_id"))
+        accepted = accepted_by_claim_id.get(claim_id)
+        if accepted is None:
+            continue
+        total += 1
+        normalized_claim = normalized.get("normalized_claim") or {}
+        qualifiers = (
+            normalized_claim.get("qualifiers")
+            if isinstance(normalized_claim, dict)
+            else None
+        )
+        confidence = qualifiers.get("confidence") if isinstance(qualifiers, dict) else None
+        reasons = []
+        if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):
+            reasons.append("missing_normalized_confidence")
+        elif confidence != accepted.get("confidence"):
+            reasons.append("normalized_confidence_mismatch")
+        if isinstance(qualifiers, dict) and not qualifiers.get("confidence_basis"):
+            reasons.append("missing_confidence_basis")
+        if reasons:
+            failures.append(
+                {
+                    "normalized_claim_id": normalized.get("normalized_claim_id"),
+                    "claim_id": claim_id,
+                    "accepted_confidence": accepted.get("confidence"),
+                    "normalized_confidence": confidence,
+                    "reasons": reasons,
+                }
+            )
+    return _check_record(
+        "normalized_claims_preserve_confidence",
+        "Normalized claims preserve accepted-claim confidence when confidence is available.",
+        total,
+        failures,
+    )
+
+
 def _summary_report_exists(config: PipelineConfig) -> AcceptanceCheckRecord:
     candidates = [
         config.paths.reports_dir / "extraction_summary.md",
@@ -584,6 +630,7 @@ def build_acceptance_checks(config: PipelineConfig) -> List[AcceptanceCheckRecor
         _accepted_claims_preserve_semantics(artifacts),
         _image_claim_truth_status_policy(artifacts),
         _normalized_claims_from_accepted_claims(artifacts),
+        _normalized_claims_preserve_confidence(artifacts),
         _quarantine_reason_codes_present(artifacts),
         _summary_report_exists(config),
         _artifact_ids_unique(artifacts),
