@@ -227,6 +227,9 @@ class ClaimDuplicateGroupRecord(StrictModel):
     member_count: int
     member_claim_ids: List[str]
     member_normalized_claim_ids: List[str]
+    member_confidences: List[Optional[float]] = Field(default_factory=list)
+    confidence_min: Optional[float] = None
+    confidence_max: Optional[float] = None
     source_ids: List[str]
     evidence_ids: List[str]
     duplicate_level: str = "same_normalized_proposition"
@@ -246,8 +249,17 @@ class ClaimDuplicateGroupRecord(StrictModel):
             raise ValueError("member_count must match member_claim_ids")
         if len(self.member_normalized_claim_ids) != self.member_count:
             raise ValueError("member_count must match member_normalized_claim_ids")
+        if self.member_confidences and len(self.member_confidences) != self.member_count:
+            raise ValueError("member_count must match member_confidences")
         if len(self.evidence_ids) != self.member_count:
             raise ValueError("member_count must match evidence_ids")
+        for confidence in self.member_confidences:
+            if confidence is not None and not (0 <= confidence <= 1):
+                raise ValueError("member_confidences must be between 0 and 1")
+        for field_name in ("confidence_min", "confidence_max"):
+            value = getattr(self, field_name)
+            if value is not None and not (0 <= value <= 1):
+                raise ValueError(f"{field_name} must be between 0 and 1")
         if not self.source_ids:
             raise ValueError("duplicate groups require at least one source_id")
         source_count = len(set(self.source_ids))

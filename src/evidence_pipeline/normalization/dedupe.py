@@ -69,7 +69,19 @@ def _duplicate_level(records: List[NormalizedClaimRecord]) -> str:
     return "same_evidence_duplicate"
 
 
+def _claim_confidence(record: NormalizedClaimRecord) -> Optional[float]:
+    qualifiers = record.normalized_claim.get("qualifiers")
+    if not isinstance(qualifiers, dict):
+        return None
+    confidence = qualifiers.get("confidence")
+    if isinstance(confidence, (int, float)) and not isinstance(confidence, bool):
+        return float(confidence)
+    return None
+
+
 def _group_record(key: str, records: List[NormalizedClaimRecord]) -> Dict[str, object]:
+    confidences = [_claim_confidence(record) for record in records]
+    numeric_confidences = [confidence for confidence in confidences if confidence is not None]
     return ClaimDuplicateGroupRecord(
         dedupe_id=stable_id("dedupe", {"normalized_claim": key}),
         normalized_proposition=json.loads(key),
@@ -77,6 +89,9 @@ def _group_record(key: str, records: List[NormalizedClaimRecord]) -> Dict[str, o
         member_count=len(records),
         member_claim_ids=[record.claim_id for record in records],
         member_normalized_claim_ids=[record.normalized_claim_id for record in records],
+        member_confidences=confidences,
+        confidence_min=min(numeric_confidences) if numeric_confidences else None,
+        confidence_max=max(numeric_confidences) if numeric_confidences else None,
         source_ids=sorted({record.source_id for record in records}),
         evidence_ids=[record.evidence_id for record in records],
         duplicate_level=_duplicate_level(records),

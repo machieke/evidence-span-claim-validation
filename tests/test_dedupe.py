@@ -53,6 +53,9 @@ def test_dedupe_claims_groups_duplicate_normalized_claims(tmp_path: Path):
         assert groups[0]["source_count"] == 1
         assert groups[0]["evidence_count"] == 2
         assert groups[0]["cross_source"] is False
+        assert groups[0]["member_confidences"] == [None, None]
+        assert groups[0]["confidence_min"] is None
+        assert groups[0]["confidence_max"] is None
         assert groups[0]["omitted_qualifier_keys"] == []
 
         jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
@@ -98,6 +101,8 @@ def test_dedupe_claims_groups_cross_source_normalized_propositions(tmp_path: Pat
                     "truth_status": "source_asserted_unverified",
                     "attribution": {"type": "document", "agent": "src_1"},
                     "source_faithful_claim": "Document one states Hope has a mast.",
+                    "confidence": 0.7,
+                    "confidence_basis": "validated_claim_confidence",
                 },
             ),
         )
@@ -114,6 +119,8 @@ def test_dedupe_claims_groups_cross_source_normalized_propositions(tmp_path: Pat
                     "truth_status": "source_asserted_unverified",
                     "attribution": {"type": "document", "agent": "src_2"},
                     "source_faithful_claim": "Document two states Hope has a mast.",
+                    "confidence": 0.9,
+                    "confidence_basis": "validated_claim_confidence",
                 },
             ),
         )
@@ -129,7 +136,15 @@ def test_dedupe_claims_groups_cross_source_normalized_propositions(tmp_path: Pat
         assert groups[0]["source_count"] == 2
         assert groups[0]["evidence_count"] == 2
         assert groups[0]["cross_source"] is True
-        assert groups[0]["omitted_qualifier_keys"] == ["attribution", "source_faithful_claim"]
+        assert groups[0]["member_confidences"] == [0.7, 0.9]
+        assert groups[0]["confidence_min"] == 0.7
+        assert groups[0]["confidence_max"] == 0.9
+        assert groups[0]["omitted_qualifier_keys"] == [
+            "attribution",
+            "confidence",
+            "confidence_basis",
+            "source_faithful_claim",
+        ]
         assert groups[0]["normalized_proposition"] == {
             "subject": "entity:vessel_hope",
             "predicate": "has_feature",

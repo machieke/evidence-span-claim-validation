@@ -358,6 +358,9 @@ def test_claim_duplicate_group_record_requires_consistent_member_count():
         member_count=2,
         member_claim_ids=["claim_1", "claim_2"],
         member_normalized_claim_ids=["nclaim_1", "nclaim_2"],
+        member_confidences=[0.7, 0.9],
+        confidence_min=0.7,
+        confidence_max=0.9,
         source_ids=["src_1"],
         evidence_ids=["ev_1", "ev_2"],
     )
@@ -366,6 +369,9 @@ def test_claim_duplicate_group_record_requires_consistent_member_count():
     assert record.source_count == 1
     assert record.evidence_count == 2
     assert record.cross_source is False
+    assert record.member_confidences == [0.7, 0.9]
+    assert record.confidence_min == 0.7
+    assert record.confidence_max == 0.9
     assert record.duplicate_level == "same_normalized_proposition"
     assert SCHEMA_REGISTRY["claim_duplicates"] is ClaimDuplicateGroupRecord
 
@@ -381,6 +387,23 @@ def test_claim_duplicate_group_record_requires_consistent_member_count():
             member_count=2,
             member_claim_ids=["claim_1"],
             member_normalized_claim_ids=["nclaim_1", "nclaim_2"],
+            source_ids=["src_1"],
+            evidence_ids=["ev_1", "ev_2"],
+        )
+
+    with pytest.raises(ValidationError):
+        ClaimDuplicateGroupRecord(
+            dedupe_id="dedupe_3",
+            normalized_proposition={
+                "subject": "speaker:bob",
+                "predicate": "asserts",
+                "object": "Hope had masts.",
+            },
+            normalized_claim={"subject": "speaker:bob", "predicate": "asserts", "object": "Hope had masts."},
+            member_count=2,
+            member_claim_ids=["claim_1", "claim_2"],
+            member_normalized_claim_ids=["nclaim_1", "nclaim_2"],
+            member_confidences=[1.5, 0.9],
             source_ids=["src_1"],
             evidence_ids=["ev_1", "ev_2"],
         )
