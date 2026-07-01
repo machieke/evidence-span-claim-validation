@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, List, Optional
 
 from evidence_pipeline.config import PipelineConfig
@@ -23,6 +25,19 @@ IMAGE_OCR_EXTRACTOR_VERSION = "image_ocr.rules.v1"
 SUPPORTED_MODALITIES = {"all", "chat", "pdf", "audio", "image"}
 TEXT_SPAN_MODALITIES = {"chat", "pdf", "audio", "image"}
 CLAIM_JSON_EXTRACTOR = DeterministicJsonExtractor()
+PROMPT_ROOT = Path(__file__).resolve().parents[3] / "prompts"
+PROMPT_FILES = {
+    "chat": "extract_claims.chat.md",
+    "pdf": "extract_claims.pdf.md",
+    "audio": "extract_claims.audio.md",
+    "image_ocr": "extract_claims.image_ocr.md",
+}
+PROMPT_VERSIONS = {
+    "chat": "extract_claims.chat.v1",
+    "pdf": "extract_claims.pdf.v1",
+    "audio": "extract_claims.audio.v1",
+    "image_ocr": "extract_claims.image_ocr.v1",
+}
 
 
 @dataclass
@@ -109,16 +124,57 @@ def _risk_flags(span: SpanRecord, evidence: EvidenceRecord) -> List[str]:
     return sorted(set(span.risk_flags) | set(evidence.risk_flags))
 
 
-def _json_extracted_claim(record: RawClaimRecord) -> RawClaimRecord:
+def _prompt_key_for_span(span: SpanRecord, evidence: EvidenceRecord) -> str:
+    if span.source_modality == "image" and evidence.evidence_type == "ocr_text_span":
+        return "image_ocr"
+    return span.source_modality
+
+
+def _load_extraction_prompt(prompt_key: str) -> str:
+    prompt_file = PROMPT_FILES.get(prompt_key)
+    if prompt_file is None:
+        return "Extract one source-faithful claim. Return JSON only."
+    path = PROMPT_ROOT / prompt_file
+    if not path.exists():
+        return "Extract one source-faithful claim. Return JSON only."
+    return path.read_text(encoding="utf-8").strip()
+
+
+def _span_prompt(span: SpanRecord, evidence: EvidenceRecord) -> tuple[str, Optional[str], Dict[str, object]]:
+    prompt_key = _prompt_key_for_span(span, evidence)
+    prompt_version = PROMPT_VERSIONS.get(prompt_key)
+    context = {
+        "span": span.model_dump(mode="json", exclude_none=True),
+        "evidence": evidence.model_dump(mode="json", exclude_none=True),
+    }
+    prompt = "\n\n".join(
+        [
+            _load_extraction_prompt(prompt_key),
+            "Target extraction context:",
+            json.dumps(context, sort_keys=True, ensure_ascii=False),
+            "Return exactly one RawClaimRecord JSON object.",
+        ]
+    )
+    return prompt, prompt_version, context
+
+
+def _json_extracted_claim(
+    record: RawClaimRecord,
+    prompt: Optional[str] = None,
+    prompt_version: Optional[str] = None,
+    request_metadata: Optional[Dict[str, object]] = None,
+) -> RawClaimRecord:
     extractor = str(record.attributes.get("extractor") or record.model.model or "deterministic")
+    metadata = dict(request_metadata or {})
+    metadata["payload"] = record.model_dump(mode="json", exclude_none=True)
     request = JsonExtractionRequest(
-        prompt=f"Extract one RawClaimRecord with {extractor}.",
+        prompt=prompt or f"Extract one RawClaimRecord with {extractor}.",
         schema_name="RawClaimRecord",
         schema=RawClaimRecord.model_json_schema(),
         provider=record.model.provider or "deterministic",
         model=record.model.model or extractor,
-        prompt_version=record.model.prompt_version,
-        metadata={"payload": record.model_dump(mode="json", exclude_none=True)},
+        prompt_version=prompt_version or record.model.prompt_version,
+        metadata=metadata,
     )
     return extract_json(CLAIM_JSON_EXTRACTOR, request, RawClaimRecord)
 
@@ -157,7 +213,13 @@ def _raw_claim_from_span(span: SpanRecord, evidence: EvidenceRecord) -> RawClaim
         support_status="raw_extracted",
         risk_flags=risk_flags,
     )
-    return _json_extracted_claim(record)
+    prompt, prompt_version, context = _span_prompt(span, evidence)
+    return _json_extracted_claim(
+        record,
+        prompt=prompt,
+        prompt_version=prompt_version,
+        request_metadata={"extraction_context": context},
+    )
 
 
 def _claim_type_for_span(span: SpanRecord, evidence: EvidenceRecord) -> str:

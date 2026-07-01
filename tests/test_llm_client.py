@@ -126,6 +126,12 @@ def test_claim_extraction_uses_json_adapter(monkeypatch, tmp_path: Path):
     assert request.schema_name == "RawClaimRecord"
     assert request.provider == "deterministic"
     assert request.model == RULE_EXTRACTOR_VERSION
+    assert request.prompt_version == "extract_claims.chat.v1"
+    assert "You extract source-faithful claims from chat messages." in request.prompt
+    assert "Target extraction context:" in request.prompt
+    context = request.metadata["extraction_context"]
+    assert context["span"]["span_id"] == "span_msg_1"
+    assert context["evidence"]["provenance"]["sender_id"] == "alice"
     claims = [payload for _, payload in read_jsonl(config.jsonl_paths()["claims_raw"])]
     assert claims[0]["model"]["provider"] == "deterministic"
     assert claims[0]["attributes"]["extractor"] == RULE_EXTRACTOR_VERSION
