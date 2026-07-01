@@ -75,6 +75,19 @@ def _object_value(raw_claim: Optional[RawClaimRecord], validated_claim: Validate
     return validated_claim.source_faithful_claim
 
 
+def _claim_confidence(
+    raw_claim: Optional[RawClaimRecord],
+    validated_claim: ValidatedClaimRecord,
+) -> tuple[Optional[float], Optional[str]]:
+    if validated_claim.confidence is not None:
+        return validated_claim.confidence, "validated_claim_confidence"
+    if validated_claim.validation.claim_confidence is not None:
+        return validated_claim.validation.claim_confidence, "validation_claim_confidence"
+    if raw_claim is not None:
+        return raw_claim.confidence, "raw_claim_confidence"
+    return None, None
+
+
 def _entity_resolutions(
     raw_claim: Optional[RawClaimRecord],
     validated_claim: ValidatedClaimRecord,
@@ -119,6 +132,17 @@ def _normalization_record(
     )
     predicate_info = predicate_definition(predicate)
     raw_attribution = raw_claim.attribution.model_dump(mode="json") if raw_claim is not None else None
+    confidence, confidence_basis = _claim_confidence(raw_claim, validated_claim)
+    qualifiers = {
+        "modality": validated_claim.modality,
+        "truth_status": validated_claim.truth_status,
+        "attribution": raw_attribution,
+        "source_faithful_claim": validated_claim.source_faithful_claim,
+    }
+    if confidence is not None:
+        qualifiers["confidence"] = confidence
+    if confidence_basis is not None:
+        qualifiers["confidence_basis"] = confidence_basis
 
     return NormalizedClaimRecord(
         normalized_claim_id=_normalized_claim_id(validated_claim.claim_id),
@@ -129,12 +153,7 @@ def _normalization_record(
             "subject": subject_id,
             "predicate": predicate,
             "object": _object_value(raw_claim, validated_claim),
-            "qualifiers": {
-                "modality": validated_claim.modality,
-                "truth_status": validated_claim.truth_status,
-                "attribution": raw_attribution,
-                "source_faithful_claim": validated_claim.source_faithful_claim,
-            },
+            "qualifiers": qualifiers,
         },
         normalization=NormalizationDetails(
             entity_resolution=_entity_resolutions(raw_claim, validated_claim, subject_surface, subject_id),

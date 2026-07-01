@@ -124,11 +124,13 @@ def test_graph_edge_record_requires_stable_identifiers():
         object="Hope had three masts.",
         modality="asserted",
         source_faithful_claim="The speaker asserted: Hope had three masts.",
+        confidence=0.82,
     )
 
     assert record.schema_version == "graph.edge.v1"
     assert record.modality == "asserted"
     assert record.source_faithful_claim == "The speaker asserted: Hope had three masts."
+    assert record.confidence == 0.82
     assert SCHEMA_REGISTRY["claim_graph"] is GraphEdgeRecord
 
     with pytest.raises(ValidationError):
@@ -141,6 +143,19 @@ def test_graph_edge_record_requires_stable_identifiers():
             subject="speaker:alice",
             predicate="",
             object="Hope had three masts.",
+        )
+
+    with pytest.raises(ValidationError):
+        GraphEdgeRecord(
+            edge_id="edge_3",
+            normalized_claim_id="nclaim_1",
+            claim_id="claim_1",
+            source_id="src_1",
+            evidence_id="ev_1",
+            subject="speaker:alice",
+            predicate="asserts",
+            object="Hope had three masts.",
+            confidence=1.5,
         )
 
 

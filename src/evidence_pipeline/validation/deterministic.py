@@ -403,6 +403,8 @@ def validate_claim_deterministically(
         attribution_preserved=attribution_preserved,
         quantities_preserved=quantities_preserved,
         introduced_entities=introduced_entities,
+        claim_confidence=claim.confidence,
+        confidence_basis="raw_claim_confidence",
         validator_version=VALIDATOR_VERSION,
     )
     return _ClaimValidationDecision(
@@ -641,6 +643,7 @@ def validate_raw_claims(
                     normalized_claim=_normalized_claim_from_raw(claim),
                     modality=claim.modality,
                     truth_status=claim.truth_status,
+                    confidence=claim.confidence,
                     support_status="accepted_extracted",
                     validation=decision.summary,
                     risk_flags=_combined_risk_flags(claim, evidence, span),

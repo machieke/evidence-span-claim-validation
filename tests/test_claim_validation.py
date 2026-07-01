@@ -99,7 +99,10 @@ def test_validate_claims_writes_accepted_validation_and_quarantine(tmp_path: Pat
         quarantined = [payload for _, payload in read_jsonl(Path("data/jsonl/quarantine.jsonl"))]
 
         assert [claim["claim_id"] for claim in validated] == ["claim_accepted"]
+        assert validated[0]["confidence"] == 0.82
         assert len(validations) == 2
+        assert validations[0]["metadata"]["validation"]["claim_confidence"] == 0.82
+        assert validations[0]["metadata"]["validation"]["confidence_basis"] == "raw_claim_confidence"
         assert [record["claim_id"] for record in quarantined] == ["claim_rejected"]
         assert quarantined[0]["reason_codes"] == ["evidence_not_exact_substring"]
 

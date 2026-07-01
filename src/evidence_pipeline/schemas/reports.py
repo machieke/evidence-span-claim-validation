@@ -21,6 +21,7 @@ class GraphEdgeRecord(StrictModel):
     source_faithful_claim: Optional[str] = None
     truth_status: Optional[str] = None
     attribution: Optional[Dict[str, Any]] = None
+    confidence: Optional[float] = None
     qualifiers: Dict[str, Any] = Field(default_factory=dict)
     schema_version: str = "graph.edge.v1"
 
@@ -37,6 +38,8 @@ class GraphEdgeRecord(StrictModel):
             value = getattr(self, field_name)
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"{field_name} must not be empty")
+        if self.confidence is not None and not (0 <= self.confidence <= 1):
+            raise ValueError("confidence must be between 0 and 1")
         return self
 
 

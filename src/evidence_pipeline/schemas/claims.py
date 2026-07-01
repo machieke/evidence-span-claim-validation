@@ -95,7 +95,15 @@ class ClaimValidationSummary(StrictModel):
     attribution_preserved: Optional[bool] = None
     quantities_preserved: Optional[bool] = None
     introduced_entities: List[str] = Field(default_factory=list)
+    claim_confidence: Optional[float] = None
+    confidence_basis: Optional[str] = None
     validator_version: str = "deterministic.v9"
+
+    @model_validator(mode="after")
+    def validate_confidence(self) -> "ClaimValidationSummary":
+        if self.claim_confidence is not None and not (0 <= self.claim_confidence <= 1):
+            raise ValueError("claim_confidence must be between 0 and 1")
+        return self
 
 
 class ValidatedClaimRecord(StrictModel):
@@ -109,6 +117,7 @@ class ValidatedClaimRecord(StrictModel):
     normalized_claim: Optional[Dict[str, Any]] = None
     modality: ClaimModality
     truth_status: TruthStatus
+    confidence: Optional[float] = None
     support_status: SupportStatus
     validation: ClaimValidationSummary
     risk_flags: List[str] = Field(default_factory=list)
@@ -120,6 +129,8 @@ class ValidatedClaimRecord(StrictModel):
             raise ValueError("validated claims require a validation-stage support_status")
         if self.support_status == "accepted_extracted" and not self.validation.deterministic_valid:
             raise ValueError("accepted extracted claims require deterministic_valid validation")
+        if self.confidence is not None and not (0 <= self.confidence <= 1):
+            raise ValueError("confidence must be between 0 and 1")
         return self
 
 

@@ -30,6 +30,12 @@ def _atom(value: object) -> str:
     return json.dumps(_canonical_text(value), ensure_ascii=False)
 
 
+def _numeric_atom(value: object) -> str:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return f"{float(value):g}"
+    return _atom(value)
+
+
 def _claim_expression(record: NormalizedClaimRecord) -> str:
     normalized = record.normalized_claim
     return " ".join(
@@ -63,6 +69,30 @@ def _claim_provenance_expressions(record: NormalizedClaimRecord) -> list[str]:
         if value is None:
             continue
         expressions.append(" ".join([f"({relation}", _atom(record.normalized_claim_id), _atom(value), ")"]))
+    confidence = qualifiers.get("confidence")
+    if isinstance(confidence, (int, float)) and not isinstance(confidence, bool):
+        expressions.append(
+            " ".join(
+                [
+                    "(claim-confidence",
+                    _atom(record.normalized_claim_id),
+                    _numeric_atom(confidence),
+                    ")",
+                ]
+            )
+        )
+    confidence_basis = qualifiers.get("confidence_basis")
+    if confidence_basis is not None:
+        expressions.append(
+            " ".join(
+                [
+                    "(claim-confidence-basis",
+                    _atom(record.normalized_claim_id),
+                    _atom(confidence_basis),
+                    ")",
+                ]
+            )
+        )
     return expressions
 
 
@@ -77,6 +107,8 @@ def export_metta(config: PipelineConfig, output_path: Optional[Path] = None) -> 
         "; (claim-truth-status normalized_claim_id truth_status)",
         "; (claim-attribution normalized_claim_id attribution_json)",
         "; (claim-source-faithful normalized_claim_id source_faithful_claim)",
+        "; (claim-confidence normalized_claim_id confidence)",
+        "; (claim-confidence-basis normalized_claim_id basis)",
     ]
     claim_count = 0
     for _, record in read_jsonl_records(paths["claims_normalized"], NormalizedClaimRecord):

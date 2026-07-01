@@ -21,8 +21,13 @@ def _validated_from_raw(claim: RawClaimRecord) -> ValidatedClaimRecord:
         evidence_text=claim.evidence_text,
         modality=claim.modality,
         truth_status=claim.truth_status,
+        confidence=claim.confidence,
         support_status="accepted_extracted",
-        validation=ClaimValidationSummary(deterministic_valid=True),
+        validation=ClaimValidationSummary(
+            deterministic_valid=True,
+            claim_confidence=claim.confidence,
+            confidence_basis="raw_claim_confidence",
+        ),
         risk_flags=claim.risk_flags,
     )
 
@@ -56,6 +61,11 @@ def test_normalize_claims_uses_image_classification_predicate_registry(tmp_path:
         assert normalized["normalized_claim"]["subject"] == "image_region:region_1"
         assert normalized["normalized_claim"]["predicate"] == "classified_as"
         assert normalized["normalized_claim"]["object"] == "red"
+        assert normalized["normalized_claim"]["qualifiers"]["confidence"] == 0.93
+        assert (
+            normalized["normalized_claim"]["qualifiers"]["confidence_basis"]
+            == "validated_claim_confidence"
+        )
         assert normalized["normalization"]["predicate_mapping"] == {
             "surface": "classified_as",
             "canonical": "classified_as",
@@ -95,6 +105,7 @@ def test_normalize_claims_preserves_controlled_raw_predicates(tmp_path: Path):
         normalized = next(payload for _, payload in read_jsonl(Path("data/jsonl/claims.normalized.jsonl")))
         assert normalized["normalized_claim"]["subject"] == "entity:vessel_hope"
         assert normalized["normalized_claim"]["predicate"] == "reports_observation"
+        assert normalized["normalized_claim"]["qualifiers"]["confidence"] == 0.9
         assert normalized["normalization"]["predicate_mapping"] == {
             "surface": "reports_observation",
             "canonical": "reports_observation",

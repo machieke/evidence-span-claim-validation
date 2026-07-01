@@ -28,6 +28,7 @@ def _edge_from_normalized_claim(record: NormalizedClaimRecord) -> GraphEdgeRecor
     qualifiers = raw_qualifiers if isinstance(raw_qualifiers, dict) else {}
     modality = qualifiers.get("modality")
     source_faithful_claim = qualifiers.get("source_faithful_claim")
+    confidence = qualifiers.get("confidence")
     edge_id = stable_id(
         "edge",
         {
@@ -50,6 +51,7 @@ def _edge_from_normalized_claim(record: NormalizedClaimRecord) -> GraphEdgeRecor
         source_faithful_claim=source_faithful_claim if isinstance(source_faithful_claim, str) else None,
         truth_status=qualifiers.get("truth_status"),
         attribution=qualifiers.get("attribution"),
+        confidence=confidence if isinstance(confidence, (int, float)) and not isinstance(confidence, bool) else None,
         qualifiers=qualifiers,
     )
 
