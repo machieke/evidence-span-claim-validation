@@ -560,6 +560,19 @@ def _image_cluster_errors(claim: RawClaimRecord, evidence: Optional[EvidenceReco
     return errors
 
 
+def _validated_truth_status(
+    claim: RawClaimRecord,
+    latest_review: Optional[ReviewDecisionRecord],
+) -> str:
+    if (
+        claim.source_modality == "image"
+        and claim.claim_type == "named_visual_classification"
+        and _human_confirmed_visual_label(claim, latest_review)
+    ):
+        return "human_confirmed"
+    return claim.truth_status
+
+
 def _validation_id(claim_id: str) -> str:
     return stable_id("val", {"claim_id": claim_id, "validator": VALIDATOR_VERSION})
 
@@ -602,6 +615,7 @@ def validate_raw_claims(
         evidence = evidence_by_id.get(claim.evidence_id)
         span = spans_by_id.get(claim.span_id) if claim.span_id else None
         review_decisions = reviews_by_claim_id.get(claim.claim_id, [])
+        latest_review = _latest_review_decision(review_decisions)
         decision = validate_claim_deterministically(
             claim,
             evidence,
@@ -642,7 +656,7 @@ def validate_raw_claims(
                     evidence_text=claim.evidence_text,
                     normalized_claim=_normalized_claim_from_raw(claim),
                     modality=claim.modality,
-                    truth_status=claim.truth_status,
+                    truth_status=_validated_truth_status(claim, latest_review),
                     confidence=claim.confidence,
                     support_status="accepted_extracted",
                     validation=decision.summary,

@@ -129,15 +129,21 @@ def test_review_accepts_low_confidence_image_region_classification(tmp_path: Pat
             ],
         )
         validation = runner.invoke(app, ["validate-claims"])
+        normalization = runner.invoke(app, ["normalize-claims"])
 
         assert review.exit_code == 0, review.stdout
         assert validation.exit_code == 0, validation.stdout
+        assert normalization.exit_code == 0, normalization.stdout
         assert "claims_accepted=1" in validation.stdout
         validations = [payload for _, payload in read_jsonl(Path("data/jsonl/validations.jsonl"))]
+        validated = [payload for _, payload in read_jsonl(Path("data/jsonl/claims.validated.jsonl"))]
+        normalized = [payload for _, payload in read_jsonl(Path("data/jsonl/claims.normalized.jsonl"))]
         assert validations[0]["status"] == "accepted_extracted"
         assert validations[0]["errors"] == []
         assert validations[0]["metadata"]["review_decisions"][0]["decision"] == "accept"
         assert validations[0]["metadata"]["review_decisions"][0]["reason_codes"] == ["human_confirmed_label"]
+        assert validated[0]["truth_status"] == "human_confirmed"
+        assert normalized[0]["normalized_claim"]["qualifiers"]["truth_status"] == "human_confirmed"
 
 
 def test_review_rejects_high_confidence_image_region_classification(tmp_path: Path):
