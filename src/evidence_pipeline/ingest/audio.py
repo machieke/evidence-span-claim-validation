@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -10,6 +12,17 @@ from evidence_pipeline.ids import sha256_file, stable_id
 from evidence_pipeline.jsonl import append_jsonl, existing_values
 from evidence_pipeline.schemas.audio import AudioUtteranceRecord
 from evidence_pipeline.schemas.sources import SourceRecord
+
+AUDIO_NORMALIZATION_VERSION = "audio.normalization.ffmpeg_plan.v1"
+
+
+@dataclass
+class AudioNormalizationResult:
+    source_id: str
+    source_created: bool
+    normalized_file: Path
+    command: List[str]
+    executed: bool
 
 
 @dataclass
@@ -35,6 +48,86 @@ def _load_transcript(path: Path) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         if not isinstance(utterance, dict):
             raise ValueError("every utterance must be a JSON object")
     return utterances, defaults
+
+
+def _default_normalized_audio_path(config: PipelineConfig, path: Path) -> Path:
+    return config.paths.work_dir / "normalized_audio" / f"{path.stem}_16khz_mono.wav"
+
+
+def _normalization_command(
+    path: Path,
+    normalized_file: Path,
+    sample_rate: int,
+    channels: int,
+) -> List[str]:
+    return [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(path),
+        "-ac",
+        str(channels),
+        "-ar",
+        str(sample_rate),
+        str(normalized_file),
+    ]
+
+
+def normalize_audio_source(
+    path: Path,
+    config: PipelineConfig,
+    normalized_file: Optional[Path] = None,
+    sample_rate: int = 16000,
+    channels: int = 1,
+    execute: bool = False,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> AudioNormalizationResult:
+    if sample_rate < 1:
+        raise ValueError("sample_rate must be positive")
+    if channels < 1:
+        raise ValueError("channels must be positive")
+
+    normalized_file = normalized_file or _default_normalized_audio_path(config, path)
+    command = _normalization_command(path, normalized_file, sample_rate, channels)
+    if execute:
+        if shutil.which("ffmpeg") is None:
+            raise RuntimeError("ffmpeg is required when --execute is set")
+        normalized_file.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(command, check=True)
+
+    sha256 = sha256_file(path)
+    source_id = stable_id("src", {"modality": "audio", "sha256": sha256})
+    paths = config.jsonl_paths()
+    existing_sources = existing_values(paths["sources"], "source_id")
+    source_created = source_id not in existing_sources
+    if source_created:
+        append_jsonl(
+            paths["sources"],
+            SourceRecord(
+                source_id=source_id,
+                source_modality="audio",
+                source_file=str(path),
+                sha256=sha256,
+                metadata={
+                    **(metadata or {}),
+                    "media_kind": "audio_source",
+                    "normalized_file": str(normalized_file),
+                    "normalization_status": "created" if execute else "planned",
+                    "normalization_command": command,
+                    "target_sample_rate": sample_rate,
+                    "target_channels": channels,
+                    "normalizer": AUDIO_NORMALIZATION_VERSION,
+                },
+            ),
+        )
+
+    return AudioNormalizationResult(
+        source_id=source_id,
+        source_created=source_created,
+        normalized_file=normalized_file,
+        command=command,
+        executed=execute,
+    )
 
 
 def _first_present(record: Dict[str, Any], keys: Iterable[str], default: Any = None) -> Any:

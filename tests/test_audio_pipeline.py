@@ -10,6 +10,67 @@ from evidence_pipeline.jsonl import read_jsonl
 runner = CliRunner()
 
 
+def test_audio_media_normalization_registers_planned_source(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        media = Path("meeting.mp3")
+        media.write_bytes(b"fake audio bytes")
+
+        first = runner.invoke(
+            app,
+            [
+                "normalize-audio",
+                "meeting.mp3",
+                "--sample-rate",
+                "8000",
+                "--channels",
+                "1",
+                "--metadata",
+                "collection=fixture",
+            ],
+        )
+        second = runner.invoke(
+            app,
+            ["normalize-audio", "meeting.mp3", "--sample-rate", "8000", "--channels", "1"],
+        )
+
+        assert first.exit_code == 0, first.stdout
+        assert second.exit_code == 0, second.stdout
+        assert "source_created=True" in first.stdout
+        assert "source_created=False" in second.stdout
+        assert "executed=False" in first.stdout
+
+        sources = [payload for _, payload in read_jsonl(Path("data/jsonl/sources.jsonl"))]
+        assert len(sources) == 1
+        assert sources[0]["source_modality"] == "audio"
+        assert sources[0]["source_file"] == "meeting.mp3"
+        metadata = sources[0]["metadata"]
+        assert metadata["collection"] == "fixture"
+        assert metadata["media_kind"] == "audio_source"
+        assert metadata["normalization_status"] == "planned"
+        assert metadata["normalized_file"] == "data/work/normalized_audio/meeting_16khz_mono.wav"
+        assert metadata["target_sample_rate"] == 8000
+        assert metadata["target_channels"] == 1
+        assert metadata["normalizer"] == "audio.normalization.ffmpeg_plan.v1"
+        assert metadata["normalization_command"] == [
+            "ffmpeg",
+            "-y",
+            "-i",
+            "meeting.mp3",
+            "-ac",
+            "1",
+            "-ar",
+            "8000",
+            "data/work/normalized_audio/meeting_16khz_mono.wav",
+        ]
+
+        jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
+        assert len(jobs) == 1
+        assert jobs[0]["stage"] == "normalize_audio"
+        assert jobs[0]["model_id"] == "audio.normalization.ffmpeg_plan.v1"
+        assert jobs[0]["metrics"] == {"executed": 0, "source_created": 1}
+        assert jobs[0]["metadata"]["command"] == metadata["normalization_command"]
+
+
 def _write_audio_transcript(path: Path) -> None:
     payload = {
         "source_file": "meeting.wav",

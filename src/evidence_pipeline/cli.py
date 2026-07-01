@@ -23,7 +23,11 @@ from evidence_pipeline.extraction.claim_extractor import (
 from evidence_pipeline.extraction.image_classifier import COLOR_CLASSIFIER_MODEL, classify_image_regions
 from evidence_pipeline.ingest.chat import ingest_chat_export
 from evidence_pipeline.ingest.chat_evidence import build_chat_evidence
-from evidence_pipeline.ingest.audio import ingest_audio_transcript
+from evidence_pipeline.ingest.audio import (
+    AUDIO_NORMALIZATION_VERSION,
+    ingest_audio_transcript,
+    normalize_audio_source,
+)
 from evidence_pipeline.ingest.audio_evidence import build_audio_evidence
 from evidence_pipeline.ingest.image import ingest_images
 from evidence_pipeline.ingest.image_evidence import build_image_cluster_evidence, build_image_evidence
@@ -327,6 +331,33 @@ def _record_ingest_audio_job(config: PipelineConfig, input_path: Path, result) -
             "utterances_skipped": result.utterances_skipped,
         },
         metadata={"input_path": str(input_path), "modality": "audio"},
+    )
+
+
+def _record_normalize_audio_job(
+    config: PipelineConfig,
+    input_path: Path,
+    result,
+    sample_rate: int,
+    channels: int,
+) -> None:
+    record_job_result(
+        config,
+        stage="normalize_audio",
+        source_id=result.source_id,
+        input_record_ids=[f"audio:{input_path}"],
+        model_id=AUDIO_NORMALIZATION_VERSION,
+        metrics={
+            "source_created": int(result.source_created),
+            "executed": int(result.executed),
+        },
+        metadata={
+            "input_path": str(input_path),
+            "normalized_file": str(result.normalized_file),
+            "sample_rate": sample_rate,
+            "channels": channels,
+            "command": result.command,
+        },
     )
 
 
@@ -937,6 +968,38 @@ def ingest_audio_transcript_command(
     typer.echo(
         f"source_id={result.source_id} source_created={result.source_created} "
         f"utterances_created={result.utterances_created} utterances_skipped={result.utterances_skipped}"
+    )
+
+
+@app.command("normalize-audio")
+def normalize_audio_command(
+    audio_file: Path = typer.Argument(..., help="Audio media file to register and optionally normalize."),
+    output: Optional[Path] = typer.Option(None, "--output", help="Normalized audio output path."),
+    sample_rate: int = typer.Option(16000, "--sample-rate", min=1, help="Target sample rate."),
+    channels: int = typer.Option(1, "--channels", min=1, help="Target channel count."),
+    execute: bool = typer.Option(False, "--execute", help="Run ffmpeg instead of only planning the normalization."),
+    metadata: Optional[List[str]] = typer.Option(None, "--metadata", help="Additional source metadata key=value. Repeatable."),
+    config_path: Path = typer.Option(Path("configs/pipeline.yaml"), "--config", help="Pipeline config path."),
+) -> None:
+    """Register an audio media source and plan or run ffmpeg normalization."""
+    config = load_config(config_path)
+    _init_paths(config)
+    try:
+        result = normalize_audio_source(
+            audio_file,
+            config,
+            normalized_file=output,
+            sample_rate=sample_rate,
+            channels=channels,
+            execute=execute,
+            metadata=_parse_metadata(metadata),
+        )
+    except (RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc))
+    _record_normalize_audio_job(config, audio_file, result, sample_rate, channels)
+    typer.echo(
+        f"source_id={result.source_id} source_created={result.source_created} "
+        f"normalized_file={result.normalized_file} executed={result.executed}"
     )
 
 
