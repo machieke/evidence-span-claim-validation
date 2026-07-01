@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
+from importlib import resources
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Dict, List, Optional
 
 from evidence_pipeline.config import PipelineConfig
@@ -25,7 +25,6 @@ IMAGE_OCR_EXTRACTOR_VERSION = "image_ocr.rules.v1"
 SUPPORTED_MODALITIES = {"all", "chat", "pdf", "audio", "image"}
 TEXT_SPAN_MODALITIES = {"chat", "pdf", "audio", "image"}
 CLAIM_JSON_EXTRACTOR = DeterministicJsonExtractor()
-PROMPT_ROOT = Path(__file__).resolve().parents[3] / "prompts"
 PROMPT_FILES = {
     "chat": "extract_claims.chat.md",
     "pdf": "extract_claims.pdf.md",
@@ -47,7 +46,7 @@ class ClaimExtractionResult:
     batches_processed: int = 0
 
 
-def _claim_id(span: SpanRecord, extractor: str) -> str:
+def _claim_id(span: SpanRecord, extractor: str, prompt_id: Optional[str]) -> str:
     return stable_id(
         "claim",
         {
@@ -55,6 +54,7 @@ def _claim_id(span: SpanRecord, extractor: str) -> str:
             "evidence_id": span.evidence_id,
             "text": span.text,
             "extractor": extractor,
+            "prompt_id": prompt_id,
         },
     )
 
@@ -133,29 +133,57 @@ def _prompt_key_for_span(span: SpanRecord, evidence: EvidenceRecord) -> str:
 def _load_extraction_prompt(prompt_key: str) -> str:
     prompt_file = PROMPT_FILES.get(prompt_key)
     if prompt_file is None:
-        return "Extract one source-faithful claim. Return JSON only."
-    path = PROMPT_ROOT / prompt_file
-    if not path.exists():
-        return "Extract one source-faithful claim. Return JSON only."
-    return path.read_text(encoding="utf-8").strip()
+        raise ValueError(f"unsupported extraction prompt key: {prompt_key}")
+    try:
+        return resources.read_text("evidence_pipeline.prompts", prompt_file, encoding="utf-8").strip()
+    except FileNotFoundError as exc:
+        raise RuntimeError(f"missing extraction prompt asset: {prompt_file}") from exc
 
 
-def _span_prompt(span: SpanRecord, evidence: EvidenceRecord) -> tuple[str, Optional[str], Dict[str, object]]:
+def _prompt_content_id(prompt_key: str, prompt_version: Optional[str], prompt_text: str) -> str:
+    return stable_id(
+        "prompt",
+        {
+            "prompt_key": prompt_key,
+            "prompt_version": prompt_version,
+            "prompt_text": prompt_text,
+        },
+        length=16,
+    )
+
+
+def _prompt_id(prompt_key: str, prompt_version: Optional[str], prompt_text: str) -> str:
+    content_id = _prompt_content_id(prompt_key, prompt_version, prompt_text)
+    if prompt_version is None:
+        return content_id
+    return f"{prompt_version}:{content_id}"
+
+
+def prompt_id_for_key(prompt_key: str) -> str:
+    prompt_text = _load_extraction_prompt(prompt_key)
+    return _prompt_id(prompt_key, PROMPT_VERSIONS.get(prompt_key), prompt_text)
+
+
+def _span_prompt(span: SpanRecord, evidence: EvidenceRecord) -> tuple[str, Optional[str], str, Dict[str, object]]:
     prompt_key = _prompt_key_for_span(span, evidence)
     prompt_version = PROMPT_VERSIONS.get(prompt_key)
+    prompt_template = _load_extraction_prompt(prompt_key)
+    prompt_id = _prompt_id(prompt_key, prompt_version, prompt_template)
     context = {
         "span": span.model_dump(mode="json", exclude_none=True),
         "evidence": evidence.model_dump(mode="json", exclude_none=True),
+        "prompt_id": prompt_id,
+        "prompt_version": prompt_version,
     }
     prompt = "\n\n".join(
         [
-            _load_extraction_prompt(prompt_key),
+            prompt_template,
             "Target extraction context:",
             json.dumps(context, sort_keys=True, ensure_ascii=False),
             "Return exactly one RawClaimRecord JSON object.",
         ]
     )
-    return prompt, prompt_version, context
+    return prompt, prompt_version, prompt_id, context
 
 
 def _json_extracted_claim(
@@ -165,6 +193,15 @@ def _json_extracted_claim(
     request_metadata: Optional[Dict[str, object]] = None,
 ) -> RawClaimRecord:
     extractor = str(record.attributes.get("extractor") or record.model.model or "deterministic")
+    effective_prompt_version = prompt_version or record.model.prompt_version
+    if effective_prompt_version is not None:
+        record = record.model_copy(
+            update={
+                "model": record.model.model_copy(
+                    update={"prompt_version": effective_prompt_version}
+                )
+            }
+        )
     metadata = dict(request_metadata or {})
     metadata["payload"] = record.model_dump(mode="json", exclude_none=True)
     request = JsonExtractionRequest(
@@ -173,7 +210,7 @@ def _json_extracted_claim(
         schema=RawClaimRecord.model_json_schema(),
         provider=record.model.provider or "deterministic",
         model=record.model.model or extractor,
-        prompt_version=prompt_version or record.model.prompt_version,
+        prompt_version=effective_prompt_version,
         metadata=metadata,
     )
     return extract_json(CLAIM_JSON_EXTRACTOR, request, RawClaimRecord)
@@ -185,8 +222,9 @@ def _raw_claim_from_span(span: SpanRecord, evidence: EvidenceRecord) -> RawClaim
     risk_flags = _risk_flags(span, evidence)
     context_dependent = "context_dependent_coreference" in risk_flags and bool(span.context_text)
     extractor = _extractor_for_span(span, evidence)
+    prompt, prompt_version, prompt_id, context = _span_prompt(span, evidence)
     record = RawClaimRecord(
-        claim_id=_claim_id(span, extractor),
+        claim_id=_claim_id(span, extractor, prompt_id),
         source_id=span.source_id,
         source_modality=span.source_modality,
         span_id=span.span_id,
@@ -197,7 +235,7 @@ def _raw_claim_from_span(span: SpanRecord, evidence: EvidenceRecord) -> RawClaim
         predicate=None,
         object=None,
         quantity=None,
-        attributes={"extractor": extractor},
+        attributes={"extractor": extractor, "prompt_id": prompt_id},
         modality=_modality_for_text(span.text),
         evidence_text=span.text,
         context_dependent=context_dependent,
@@ -208,17 +246,16 @@ def _raw_claim_from_span(span: SpanRecord, evidence: EvidenceRecord) -> RawClaim
         model={
             "provider": "deterministic",
             "model": extractor,
-            "prompt_version": None,
+            "prompt_version": prompt_version,
         },
         support_status="raw_extracted",
         risk_flags=risk_flags,
     )
-    prompt, prompt_version, context = _span_prompt(span, evidence)
     return _json_extracted_claim(
         record,
         prompt=prompt,
         prompt_version=prompt_version,
-        request_metadata={"extraction_context": context},
+        request_metadata={"extraction_context": context, "prompt_id": prompt_id},
     )
 
 

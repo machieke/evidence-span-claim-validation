@@ -9,7 +9,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from evidence_pipeline.config import PipelineConfig
 from evidence_pipeline.ids import sha256_file, stable_id
-from evidence_pipeline.jsonl import append_jsonl, existing_values
+from evidence_pipeline.jsonl import append_jsonl, existing_values, read_jsonl, write_jsonl
 from evidence_pipeline.schemas.audio import AudioUtteranceRecord
 from evidence_pipeline.schemas.sources import SourceRecord
 
@@ -20,8 +20,10 @@ AUDIO_NORMALIZATION_VERSION = "audio.normalization.ffmpeg_plan.v1"
 class AudioNormalizationResult:
     source_id: str
     source_created: bool
+    source_updated: bool
     normalized_file: Path
     command: List[str]
+    normalization_policy_id: str
     executed: bool
 
 
@@ -50,8 +52,28 @@ def _load_transcript(path: Path) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     return utterances, defaults
 
 
-def _default_normalized_audio_path(config: PipelineConfig, path: Path) -> Path:
-    return config.paths.work_dir / "normalized_audio" / f"{path.stem}_16khz_mono.wav"
+def _sample_rate_label(sample_rate: int) -> str:
+    if sample_rate % 1000 == 0:
+        return f"{sample_rate // 1000}khz"
+    return f"{sample_rate}hz"
+
+
+def _channel_label(channels: int) -> str:
+    if channels == 1:
+        return "mono"
+    if channels == 2:
+        return "stereo"
+    return f"{channels}ch"
+
+
+def _default_normalized_audio_path(
+    config: PipelineConfig,
+    path: Path,
+    sample_rate: int,
+    channels: int,
+) -> Path:
+    target = f"{_sample_rate_label(sample_rate)}_{_channel_label(channels)}"
+    return config.paths.work_dir / "normalized_audio" / f"{path.stem}_{target}.wav"
 
 
 def _normalization_command(
@@ -73,6 +95,133 @@ def _normalization_command(
     ]
 
 
+def _normalization_policy_id(normalized_file: Path, sample_rate: int, channels: int) -> str:
+    return stable_id(
+        "audio_norm",
+        {
+            "normalizer": AUDIO_NORMALIZATION_VERSION,
+            "normalized_file": str(normalized_file),
+            "sample_rate": sample_rate,
+            "channels": channels,
+        },
+        length=16,
+    )
+
+
+def _normalization_metadata(
+    normalized_file: Path,
+    command: List[str],
+    sample_rate: int,
+    channels: int,
+    execute: bool,
+    normalization_policy_id: str,
+) -> Dict[str, Any]:
+    return {
+        "normalization_policy_id": normalization_policy_id,
+        "normalized_file": str(normalized_file),
+        "normalization_status": "created" if execute else "planned",
+        "normalization_command": command,
+        "target_sample_rate": sample_rate,
+        "target_channels": channels,
+        "normalizer": AUDIO_NORMALIZATION_VERSION,
+    }
+
+
+def _merge_audio_normalizations(
+    existing: List[Dict[str, Any]],
+    current: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    current_policy_id = current["normalization_policy_id"]
+    merged = []
+    replaced = False
+    for item in existing:
+        if not isinstance(item, dict):
+            continue
+        if item.get("normalization_policy_id") == current_policy_id:
+            merged.append(current)
+            replaced = True
+        else:
+            merged.append(item)
+    if not replaced:
+        merged.append(current)
+    return merged
+
+
+def _effective_normalization_metadata(
+    existing: List[Dict[str, Any]],
+    current: Dict[str, Any],
+) -> Dict[str, Any]:
+    current_policy_id = current["normalization_policy_id"]
+    for item in existing:
+        if not isinstance(item, dict):
+            continue
+        if item.get("normalization_policy_id") != current_policy_id:
+            continue
+        if item.get("normalization_status") == "created" and current.get("normalization_status") == "planned":
+            return item
+    return current
+
+
+def _upsert_audio_source(
+    path: Path,
+    config: PipelineConfig,
+    sha256: str,
+    source_id: str,
+    source_metadata: Dict[str, Any],
+    metadata: Optional[Dict[str, Any]],
+) -> Tuple[bool, bool]:
+    paths = config.jsonl_paths()
+    records = [payload for _, payload in read_jsonl(paths["sources"])]
+    source_created = True
+    source_updated = False
+    next_records: List[Dict[str, Any]] = []
+    for payload in records:
+        if payload.get("source_id") != source_id:
+            next_records.append(payload)
+            continue
+        source_created = False
+        existing_metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+        normalizations = existing_metadata.get("audio_normalizations")
+        normalizations = normalizations if isinstance(normalizations, list) else []
+        effective_source_metadata = _effective_normalization_metadata(normalizations, source_metadata)
+        updated_metadata = {
+            **existing_metadata,
+            **(metadata or {}),
+            "media_kind": "audio_source",
+            **effective_source_metadata,
+            "audio_normalizations": _merge_audio_normalizations(normalizations, effective_source_metadata),
+        }
+        updated_payload = {
+            **payload,
+            "source_modality": "audio",
+            "source_file": str(path),
+            "sha256": sha256,
+            "metadata": updated_metadata,
+        }
+        next_records.append(updated_payload)
+        source_updated = updated_payload != payload
+    if source_created:
+        append_jsonl(
+            paths["sources"],
+            SourceRecord(
+                source_id=source_id,
+                source_modality="audio",
+                source_file=str(path),
+                sha256=sha256,
+                metadata={
+                    **(metadata or {}),
+                    **source_metadata,
+                    "media_kind": "audio_source",
+                    "audio_normalizations": [source_metadata],
+                },
+            ),
+        )
+        return True, False
+    if source_updated:
+        write_jsonl(paths["sources"], next_records)
+    return False, source_updated
+
+
 def normalize_audio_source(
     path: Path,
     config: PipelineConfig,
@@ -86,46 +235,46 @@ def normalize_audio_source(
         raise ValueError("sample_rate must be positive")
     if channels < 1:
         raise ValueError("channels must be positive")
+    if not path.exists() or not path.is_file():
+        raise ValueError(f"audio media file does not exist: {path}")
 
-    normalized_file = normalized_file or _default_normalized_audio_path(config, path)
+    normalized_file = normalized_file or _default_normalized_audio_path(config, path, sample_rate, channels)
+    if normalized_file.resolve(strict=False) == path.resolve(strict=False):
+        raise ValueError("normalized audio output path must differ from the input path")
     command = _normalization_command(path, normalized_file, sample_rate, channels)
+    sha256 = sha256_file(path)
+    source_id = stable_id("src", {"modality": "audio", "sha256": sha256})
+    normalization_policy_id = _normalization_policy_id(normalized_file, sample_rate, channels)
+    source_metadata = _normalization_metadata(
+        normalized_file,
+        command,
+        sample_rate,
+        channels,
+        execute,
+        normalization_policy_id,
+    )
     if execute:
         if shutil.which("ffmpeg") is None:
             raise RuntimeError("ffmpeg is required when --execute is set")
         normalized_file.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run(command, check=True)
 
-    sha256 = sha256_file(path)
-    source_id = stable_id("src", {"modality": "audio", "sha256": sha256})
-    paths = config.jsonl_paths()
-    existing_sources = existing_values(paths["sources"], "source_id")
-    source_created = source_id not in existing_sources
-    if source_created:
-        append_jsonl(
-            paths["sources"],
-            SourceRecord(
-                source_id=source_id,
-                source_modality="audio",
-                source_file=str(path),
-                sha256=sha256,
-                metadata={
-                    **(metadata or {}),
-                    "media_kind": "audio_source",
-                    "normalized_file": str(normalized_file),
-                    "normalization_status": "created" if execute else "planned",
-                    "normalization_command": command,
-                    "target_sample_rate": sample_rate,
-                    "target_channels": channels,
-                    "normalizer": AUDIO_NORMALIZATION_VERSION,
-                },
-            ),
-        )
+    source_created, source_updated = _upsert_audio_source(
+        path,
+        config,
+        sha256,
+        source_id,
+        source_metadata,
+        metadata,
+    )
 
     return AudioNormalizationResult(
         source_id=source_id,
         source_created=source_created,
+        source_updated=source_updated,
         normalized_file=normalized_file,
         command=command,
+        normalization_policy_id=normalization_policy_id,
         executed=execute,
     )
 

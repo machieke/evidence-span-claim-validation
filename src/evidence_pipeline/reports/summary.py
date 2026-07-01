@@ -247,26 +247,29 @@ def _normalized_confidence_rate(claims_validated: Iterable[dict], claims_normali
     if not accepted_confidence:
         return _rate(0, 0)
 
-    normalized_by_claim_id: Dict[str, List[dict]] = {}
+    total = 0
+    preserved = 0
     for normalized in claims_normalized:
         claim_id = normalized.get("claim_id")
         if claim_id is None:
             continue
-        normalized_by_claim_id.setdefault(str(claim_id), []).append(normalized)
-
-    preserved = 0
-    for claim_id, confidence in accepted_confidence.items():
-        for normalized in normalized_by_claim_id.get(claim_id, []):
-            normalized_claim = normalized.get("normalized_claim") or {}
-            qualifiers = (
-                normalized_claim.get("qualifiers")
-                if isinstance(normalized_claim, dict)
-                else None
-            )
-            if isinstance(qualifiers, dict) and qualifiers.get("confidence") == confidence:
-                preserved += 1
-                break
-    return _rate(preserved, len(accepted_confidence))
+        confidence = accepted_confidence.get(str(claim_id))
+        if confidence is None:
+            continue
+        total += 1
+        normalized_claim = normalized.get("normalized_claim") or {}
+        qualifiers = (
+            normalized_claim.get("qualifiers")
+            if isinstance(normalized_claim, dict)
+            else None
+        )
+        if (
+            isinstance(qualifiers, dict)
+            and qualifiers.get("confidence") == confidence
+            and bool(qualifiers.get("confidence_basis"))
+        ):
+            preserved += 1
+    return _rate(preserved, total)
 
 
 def _numeric_value(value: object) -> Optional[float]:

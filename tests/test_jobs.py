@@ -84,8 +84,10 @@ def test_core_stage_commands_write_idempotent_job_records(tmp_path: Path):
             "normalizer.v1",
         ]
         assert all(job["model_hash"].startswith("model_") for job in jobs)
-        assert all(job.get("prompt_id") is None for job in jobs)
-        assert all(job.get("prompt_hash") is None for job in jobs)
+        assert jobs[0]["prompt_id"].startswith("extract_claims.chat.v1:prompt_")
+        assert jobs[0]["prompt_hash"].startswith("prompt_")
+        assert all(job.get("prompt_id") is None for job in jobs[1:])
+        assert all(job.get("prompt_hash") is None for job in jobs[1:])
         assert jobs[0]["input_record_ids"] == ["modality:chat"]
         assert jobs[0]["metrics"] == {"claims_created": 1, "claims_skipped": 0}
         assert jobs[1]["metrics"] == {
@@ -180,6 +182,8 @@ def test_extract_claims_can_append_in_batches(tmp_path: Path):
             "claims_skipped": 0,
         }
         assert jobs[0]["metadata"] == {"batch_size": 2, "modality": "chat"}
+        assert jobs[0]["prompt_id"].startswith("extract_claims.chat.v1:prompt_")
+        assert jobs[0]["prompt_hash"].startswith("prompt_")
 
 
 def test_record_job_result_persists_auditable_model_and_prompt_ids(tmp_path: Path):

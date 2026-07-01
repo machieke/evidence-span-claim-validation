@@ -1,9 +1,13 @@
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
+from evidence_pipeline.config import PipelineConfig
 from evidence_pipeline.cli import app
+from evidence_pipeline.ingest import audio as audio_ingest
+from evidence_pipeline.ingest.audio import normalize_audio_source
 from evidence_pipeline.jsonl import read_jsonl
 
 
@@ -47,10 +51,31 @@ def test_audio_media_normalization_registers_planned_source(tmp_path: Path):
         assert metadata["collection"] == "fixture"
         assert metadata["media_kind"] == "audio_source"
         assert metadata["normalization_status"] == "planned"
-        assert metadata["normalized_file"] == "data/work/normalized_audio/meeting_16khz_mono.wav"
+        assert metadata["normalized_file"] == "data/work/normalized_audio/meeting_8khz_mono.wav"
         assert metadata["target_sample_rate"] == 8000
         assert metadata["target_channels"] == 1
         assert metadata["normalizer"] == "audio.normalization.ffmpeg_plan.v1"
+        assert metadata["audio_normalizations"] == [
+            {
+                "normalization_command": [
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    "meeting.mp3",
+                    "-ac",
+                    "1",
+                    "-ar",
+                    "8000",
+                    "data/work/normalized_audio/meeting_8khz_mono.wav",
+                ],
+                "normalization_policy_id": metadata["normalization_policy_id"],
+                "normalization_status": "planned",
+                "normalized_file": "data/work/normalized_audio/meeting_8khz_mono.wav",
+                "normalizer": "audio.normalization.ffmpeg_plan.v1",
+                "target_channels": 1,
+                "target_sample_rate": 8000,
+            }
+        ]
         assert metadata["normalization_command"] == [
             "ffmpeg",
             "-y",
@@ -60,15 +85,115 @@ def test_audio_media_normalization_registers_planned_source(tmp_path: Path):
             "1",
             "-ar",
             "8000",
-            "data/work/normalized_audio/meeting_16khz_mono.wav",
+            "data/work/normalized_audio/meeting_8khz_mono.wav",
         ]
 
         jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
         assert len(jobs) == 1
         assert jobs[0]["stage"] == "normalize_audio"
         assert jobs[0]["model_id"] == "audio.normalization.ffmpeg_plan.v1"
-        assert jobs[0]["metrics"] == {"executed": 0, "source_created": 1}
+        assert jobs[0]["input_record_ids"] == [
+            "audio:meeting.mp3",
+            "execute:0",
+            f"normalization_policy:{metadata['normalization_policy_id']}",
+        ]
+        assert jobs[0]["metrics"] == {"executed": 0, "source_created": 1, "source_updated": 0}
         assert jobs[0]["metadata"]["command"] == metadata["normalization_command"]
+        assert jobs[0]["metadata"]["normalization_policy_id"] == metadata["normalization_policy_id"]
+
+
+def test_audio_media_normalization_jobs_are_policy_specific(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        media = Path("meeting.mp3")
+        media.write_bytes(b"fake audio bytes")
+
+        first = runner.invoke(app, ["normalize-audio", "meeting.mp3", "--sample-rate", "8000"])
+        second = runner.invoke(
+            app,
+            ["normalize-audio", "meeting.mp3", "--sample-rate", "16000", "--channels", "2"],
+        )
+        duplicate_second = runner.invoke(
+            app,
+            ["normalize-audio", "meeting.mp3", "--sample-rate", "16000", "--channels", "2"],
+        )
+
+        assert first.exit_code == 0, first.stdout
+        assert second.exit_code == 0, second.stdout
+        assert duplicate_second.exit_code == 0, duplicate_second.stdout
+
+        jobs = [payload for _, payload in read_jsonl(Path("data/jsonl/jobs.jsonl"))]
+        assert len(jobs) == 2
+        assert [job["metadata"]["normalized_file"] for job in jobs] == [
+            "data/work/normalized_audio/meeting_8khz_mono.wav",
+            "data/work/normalized_audio/meeting_16khz_stereo.wav",
+        ]
+        assert jobs[1]["metrics"] == {"executed": 0, "source_created": 0, "source_updated": 1}
+        assert jobs[0]["metadata"]["normalization_policy_id"] != jobs[1]["metadata"]["normalization_policy_id"]
+
+        sources = [payload for _, payload in read_jsonl(Path("data/jsonl/sources.jsonl"))]
+        assert len(sources) == 1
+        assert sources[0]["metadata"]["normalized_file"] == "data/work/normalized_audio/meeting_16khz_stereo.wav"
+        assert len(sources[0]["metadata"]["audio_normalizations"]) == 2
+
+
+def test_audio_media_execute_updates_planned_source(monkeypatch, tmp_path: Path):
+    monkeypatch.chdir(tmp_path)
+    media = Path("meeting.mp3")
+    media.write_bytes(b"fake audio bytes")
+    config = PipelineConfig()
+    calls = []
+
+    monkeypatch.setattr(audio_ingest.shutil, "which", lambda name: "/usr/bin/ffmpeg")
+
+    def fake_run(command, check):
+        calls.append((command, check))
+
+    monkeypatch.setattr(audio_ingest.subprocess, "run", fake_run)
+
+    planned = normalize_audio_source(media, config, sample_rate=8000)
+    executed = normalize_audio_source(media, config, sample_rate=8000, execute=True)
+
+    assert planned.source_created is True
+    assert planned.source_updated is False
+    assert executed.source_created is False
+    assert executed.source_updated is True
+    assert executed.normalization_policy_id == planned.normalization_policy_id
+    assert calls == [(executed.command, True)]
+
+    sources = [payload for _, payload in read_jsonl(config.jsonl_paths()["sources"])]
+    assert len(sources) == 1
+    metadata = sources[0]["metadata"]
+    assert metadata["normalization_status"] == "created"
+    assert metadata["audio_normalizations"][0]["normalization_status"] == "created"
+
+
+def test_audio_media_dry_run_does_not_downgrade_created_source(monkeypatch, tmp_path: Path):
+    monkeypatch.chdir(tmp_path)
+    media = Path("meeting.mp3")
+    media.write_bytes(b"fake audio bytes")
+    config = PipelineConfig()
+
+    monkeypatch.setattr(audio_ingest.shutil, "which", lambda name: "/usr/bin/ffmpeg")
+    monkeypatch.setattr(audio_ingest.subprocess, "run", lambda command, check: None)
+
+    executed = normalize_audio_source(media, config, sample_rate=8000, execute=True)
+    planned = normalize_audio_source(media, config, sample_rate=8000)
+
+    assert executed.source_created is True
+    assert planned.source_created is False
+    assert planned.source_updated is False
+    sources = [payload for _, payload in read_jsonl(config.jsonl_paths()["sources"])]
+    metadata = sources[0]["metadata"]
+    assert metadata["normalization_status"] == "created"
+    assert metadata["audio_normalizations"][0]["normalization_status"] == "created"
+
+
+def test_audio_media_normalization_rejects_overwriting_input(tmp_path: Path):
+    media = tmp_path / "meeting.mp3"
+    media.write_bytes(b"fake audio bytes")
+
+    with pytest.raises(ValueError, match="must differ from the input path"):
+        normalize_audio_source(media, PipelineConfig(), normalized_file=media)
 
 
 def _write_audio_transcript(path: Path) -> None:

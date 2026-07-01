@@ -132,6 +132,116 @@ def test_claim_extraction_uses_json_adapter(monkeypatch, tmp_path: Path):
     context = request.metadata["extraction_context"]
     assert context["span"]["span_id"] == "span_msg_1"
     assert context["evidence"]["provenance"]["sender_id"] == "alice"
+    assert context["prompt_version"] == "extract_claims.chat.v1"
+    assert context["prompt_id"].startswith("extract_claims.chat.v1:prompt_")
+    assert request.metadata["prompt_id"] == context["prompt_id"]
     claims = [payload for _, payload in read_jsonl(config.jsonl_paths()["claims_raw"])]
     assert claims[0]["model"]["provider"] == "deterministic"
+    assert claims[0]["model"]["prompt_version"] == "extract_claims.chat.v1"
     assert claims[0]["attributes"]["extractor"] == RULE_EXTRACTOR_VERSION
+    assert claims[0]["attributes"]["prompt_id"] == context["prompt_id"]
+
+
+def test_prompt_version_change_creates_new_raw_claim(monkeypatch, tmp_path: Path):
+    monkeypatch.chdir(tmp_path)
+    config = PipelineConfig()
+    for path in config.jsonl_paths().values():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+
+    append_jsonl(
+        config.jsonl_paths()["evidence"],
+        EvidenceRecord(
+            evidence_id="ev_msg_1",
+            source_id="src_chat_1",
+            source_modality="chat",
+            evidence_type="message_span",
+            text="Hope had three masts.",
+            provenance={"sender_id": "alice"},
+        ),
+    )
+    append_jsonl(
+        config.jsonl_paths()["spans"],
+        SpanRecord(
+            span_id="span_msg_1",
+            source_id="src_chat_1",
+            source_modality="chat",
+            evidence_id="ev_msg_1",
+            text="Hope had three masts.",
+            char_start=0,
+            char_end=21,
+            label="claim_bearing",
+            score=0.9,
+        ),
+    )
+
+    first = extract_claims_from_spans(config, modality="chat")
+    monkeypatch.setitem(claim_extractor.PROMPT_VERSIONS, "chat", "extract_claims.chat.v2")
+    second = extract_claims_from_spans(config, modality="chat")
+
+    assert first.created == 1
+    assert second.created == 1
+    claims = [payload for _, payload in read_jsonl(config.jsonl_paths()["claims_raw"])]
+    assert [claim["model"]["prompt_version"] for claim in claims] == [
+        "extract_claims.chat.v1",
+        "extract_claims.chat.v2",
+    ]
+    assert len({claim["attributes"]["prompt_id"] for claim in claims}) == 2
+    assert claims[0]["attributes"]["prompt_id"].startswith("extract_claims.chat.v1:prompt_")
+    assert claims[1]["attributes"]["prompt_id"].startswith("extract_claims.chat.v2:prompt_")
+    assert len({claim["claim_id"] for claim in claims}) == 2
+
+
+def test_prompt_content_change_creates_new_raw_claim(monkeypatch, tmp_path: Path):
+    monkeypatch.chdir(tmp_path)
+    config = PipelineConfig()
+    for path in config.jsonl_paths().values():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+
+    append_jsonl(
+        config.jsonl_paths()["evidence"],
+        EvidenceRecord(
+            evidence_id="ev_msg_1",
+            source_id="src_chat_1",
+            source_modality="chat",
+            evidence_type="message_span",
+            text="Hope had three masts.",
+            provenance={"sender_id": "alice"},
+        ),
+    )
+    append_jsonl(
+        config.jsonl_paths()["spans"],
+        SpanRecord(
+            span_id="span_msg_1",
+            source_id="src_chat_1",
+            source_modality="chat",
+            evidence_id="ev_msg_1",
+            text="Hope had three masts.",
+            char_start=0,
+            char_end=21,
+            label="claim_bearing",
+            score=0.9,
+        ),
+    )
+
+    prompt_text = {"value": "Prompt A"}
+    monkeypatch.setattr(
+        claim_extractor,
+        "_load_extraction_prompt",
+        lambda prompt_key: prompt_text["value"],
+    )
+
+    first = extract_claims_from_spans(config, modality="chat")
+    prompt_text["value"] = "Prompt B"
+    second = extract_claims_from_spans(config, modality="chat")
+
+    assert first.created == 1
+    assert second.created == 1
+    claims = [payload for _, payload in read_jsonl(config.jsonl_paths()["claims_raw"])]
+    assert [claim["model"]["prompt_version"] for claim in claims] == [
+        "extract_claims.chat.v1",
+        "extract_claims.chat.v1",
+    ]
+    assert len({claim["claim_id"] for claim in claims}) == 2
+    assert len({claim["attributes"]["prompt_id"] for claim in claims}) == 2

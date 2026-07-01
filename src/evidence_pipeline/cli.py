@@ -19,6 +19,7 @@ from evidence_pipeline.extraction.claim_extractor import (
     IMAGE_REGION_EXTRACTOR_VERSION,
     RULE_EXTRACTOR_VERSION,
     extract_claims_from_spans,
+    prompt_id_for_key,
 )
 from evidence_pipeline.extraction.image_classifier import COLOR_CLASSIFIER_MODEL, classify_image_regions
 from evidence_pipeline.ingest.chat import ingest_chat_export
@@ -345,15 +346,21 @@ def _record_normalize_audio_job(
         config,
         stage="normalize_audio",
         source_id=result.source_id,
-        input_record_ids=[f"audio:{input_path}"],
+        input_record_ids=[
+            f"audio:{input_path}",
+            f"normalization_policy:{result.normalization_policy_id}",
+            f"execute:{int(result.executed)}",
+        ],
         model_id=AUDIO_NORMALIZATION_VERSION,
         metrics={
             "source_created": int(result.source_created),
+            "source_updated": int(result.source_updated),
             "executed": int(result.executed),
         },
         metadata={
             "input_path": str(input_path),
             "normalized_file": str(result.normalized_file),
+            "normalization_policy_id": result.normalization_policy_id,
             "sample_rate": sample_rate,
             "channels": channels,
             "command": result.command,
@@ -569,6 +576,19 @@ def _extract_model_id(modality: str) -> str:
     return RULE_EXTRACTOR_VERSION
 
 
+def _extract_prompt_id(modality: str) -> Optional[str]:
+    if modality == "all":
+        return "+".join(
+            prompt_id_for_key(key)
+            for key in ("chat", "pdf", "audio", "image_ocr")
+        )
+    if modality == "image":
+        return prompt_id_for_key("image_ocr")
+    if modality in {"chat", "pdf", "audio"}:
+        return prompt_id_for_key(modality)
+    return None
+
+
 def _record_extract_claims_job(
     config: PipelineConfig,
     modality: str,
@@ -587,6 +607,7 @@ def _record_extract_claims_job(
         source_id=source_id,
         input_record_ids=_stage_input_ids(f"modality:{modality}", source_id=source_id),
         model_id=_extract_model_id(modality),
+        prompt_id=_extract_prompt_id(modality),
         metrics=metrics,
         metadata=metadata,
     )
